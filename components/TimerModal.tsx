@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Task, TimerMode } from '../types.ts';
 
 interface TimerModalProps {
@@ -11,6 +11,7 @@ interface TimerModalProps {
 const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) => {
   const [mode, setMode] = useState<TimerMode>('POMODORO');
   const [isBreak, setIsBreak] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   
   const [workDuration, setWorkDuration] = useState(25);
   const [breakDuration, setBreakDuration] = useState(5);
@@ -24,16 +25,22 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   const [isFinished, setIsFinished] = useState(false);
   const [flashType, setFlashType] = useState<'NONE' | 'SUCCESS' | 'WARNING' | 'DANGER'>('NONE');
 
+  // Ref para rastrear se o timer já foi iniciado alguma vez nesta sessão
+  const hasStartedRef = useRef(false);
+
+  // Sincroniza o timeLeft APENAS quando o modo muda ou a duração é alterada, 
+  // mas SOMENTE se o cronômetro ainda não tiver começado a rodar (estado virgem)
   useEffect(() => {
-    if (!isActive) {
+    if (!hasStartedRef.current && !isActive) {
       if (mode === 'POMODORO') setTimeLeft((isBreak ? breakDuration : workDuration) * 60);
       else if (mode === 'TIMER') setTimeLeft(timerDuration * 60);
     }
-  }, [workDuration, breakDuration, timerDuration, mode, isBreak, isActive]);
+  }, [workDuration, breakDuration, timerDuration, mode, isBreak]);
 
   useEffect(() => {
     let interval: any = null;
     if (isActive) {
+      hasStartedRef.current = true;
       interval = setInterval(() => {
         if (!isBreak) {
           setTotalAccumulatedSeconds(prev => prev + 1);
@@ -48,6 +55,7 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
                 const nextIsBreak = !isBreak;
                 setIsBreak(nextIsBreak);
                 setIsActive(false);
+                hasStartedRef.current = false; // Permite resetar para o novo tempo de repouso/foco
                 triggerFlash(nextIsBreak ? 'SUCCESS' : 'WARNING');
                 return (nextIsBreak ? breakDuration : workDuration) * 60;
               } else {
@@ -88,6 +96,7 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
     setIsActive(false);
     setIsBreak(false);
     setIsFinished(false);
+    hasStartedRef.current = false;
     if (mode === 'POMODORO') setTimeLeft(workDuration * 60);
     else if (mode === 'TIMER') setTimeLeft(timerDuration * 60);
     else setStopwatchTime(0);
@@ -97,6 +106,7 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
     setIsActive(false);
     setIsBreak(false);
     setIsFinished(false);
+    hasStartedRef.current = false;
     setMode(newMode);
   };
 
@@ -105,6 +115,8 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   };
 
   const adjustTime = (amount: number) => {
+    // Ao ajustar manualmente, marcamos como "não iniciado" para o novo valor refletir no visor
+    hasStartedRef.current = false;
     if (mode === 'POMODORO') {
       if (isBreak) setBreakDuration(prev => Math.max(1, prev + amount));
       else setWorkDuration(prev => Math.max(1, prev + amount));
@@ -120,10 +132,47 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
     return total === 0 ? 0 : timeLeft / total;
   };
 
-  // Ajuste fino dos parâmetros do círculo
-  const radius = 135; // Aumentado para preencher melhor o container
+  const radius = 135;
   const circumference = 2 * Math.PI * radius;
-  const center = 160; // Metade de 320px (tamanho do container)
+  const center = 160;
+
+  if (isMinimized) {
+    return (
+      <div 
+        onClick={() => setIsMinimized(false)}
+        className={`fixed bottom-8 right-8 z-[110] cursor-pointer group animate-in slide-in-from-right-10 duration-500`}
+      >
+        <div className={`flex items-center gap-4 bg-[#0a0f1e] border-2 ${isBreak ? 'border-emerald-500/50' : 'border-purple-500/50'} px-6 py-4 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:scale-105 hover:border-white/20 transition-all backdrop-blur-xl`}>
+          <div className="relative w-10 h-10 flex items-center justify-center">
+            <svg className="w-full h-full -rotate-90">
+               <circle cx="20" cy="20" r="18" stroke="rgba(255,255,255,0.05)" strokeWidth="3" fill="transparent" />
+               <circle 
+                  cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="3" fill="transparent" 
+                  className={isBreak ? 'text-emerald-500' : 'text-purple-500'}
+                  strokeDasharray={2 * Math.PI * 18}
+                  strokeDashoffset={(2 * Math.PI * 18) - (2 * Math.PI * 18 * getProgress())}
+                  strokeLinecap="round"
+               />
+            </svg>
+            <div className={`absolute w-2 h-2 rounded-full ${isActive ? 'bg-indigo-400 animate-pulse' : 'bg-slate-700'}`} />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-none mb-1">{isBreak ? 'Repouso' : 'Foco'}</span>
+            <span className="text-xl font-space font-bold text-white tracking-tighter leading-none tabular-nums">
+              {mode === 'STOPWATCH' ? formatTime(stopwatchTime) : formatTime(timeLeft)}
+            </span>
+          </div>
+          <div className="w-px h-8 bg-white/10 mx-1" />
+          <button 
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-slate-500 hover:text-white transition-colors"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl flex items-center justify-center z-[100] p-4 sm:p-6 animate-in fade-in duration-500">
@@ -134,7 +183,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
       }`} />
 
       <div className={`bg-[#0a0f1e] border-2 border-white/10 ${isBreak ? 'border-emerald-500/40' : (isFinished ? 'border-indigo-400 animate-pulse' : 'border-purple-500/40')} rounded-[4rem] w-full max-w-[500px] overflow-hidden shadow-[0_0_120px_rgba(0,0,0,1)] transition-all duration-500`}>
-        {/* Header Section */}
         <div className="px-12 pt-12 pb-8 flex justify-between items-start">
           <div className="space-y-1">
             <span className={`text-[11px] uppercase tracking-[0.6em] ${isBreak ? 'text-emerald-400' : (isFinished ? 'text-indigo-400' : 'text-purple-400')} font-bold block opacity-70`}>
@@ -142,11 +190,22 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             </span>
             <h3 className="text-4xl font-space font-bold text-white tracking-tighter uppercase leading-none">{task.title}</h3>
           </div>
-          <button onClick={onClose} className="w-12 h-12 -mr-3 -mt-3 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors text-slate-600 hover:text-white text-4xl font-extralight">&times;</button>
+          
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsMinimized(true)} 
+              className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors text-slate-600 hover:text-white"
+              title="Minimizar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <button onClick={onClose} className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors text-slate-600 hover:text-white text-4xl font-extralight">&times;</button>
+          </div>
         </div>
 
         <div className="px-10 pb-12">
-          {/* Mode Tabs */}
           <div className="flex justify-center gap-3 mb-10">
             {(['POMODORO', 'TIMER', 'STOPWATCH'] as TimerMode[]).map((m) => (
               <button
@@ -163,13 +222,11 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             ))}
           </div>
 
-          {/* Clock Container - Ajustado para centralização perfeita */}
           <div className="relative flex items-center justify-center mb-12 mx-auto w-[320px] h-[320px] bg-slate-900/30 border border-white/5 rounded-[4rem] shadow-[inset_0_0_40px_rgba(0,0,0,0.5)]">
             <svg 
               className="w-full h-full -rotate-90 block"
               viewBox="0 0 320 320"
             >
-              {/* Círculo de Fundo */}
               <circle 
                 cx={center} 
                 cy={center} 
@@ -179,7 +236,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
                 fill="transparent" 
                 className="text-slate-900" 
               />
-              {/* Círculo de Progresso */}
               <circle 
                 cx={center} 
                 cy={center} 
@@ -209,7 +265,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             </div>
           </div>
 
-          {/* Controls Section */}
           <div className="grid grid-cols-2 gap-5 mb-12">
             <button
               onClick={toggleTimer}
@@ -233,7 +288,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             </button>
           </div>
 
-          {/* Bottom Confirmation Button */}
           <div className="pt-10 border-t border-white/5">
             <button
               onClick={() => handleFinalize('COMPLETED')}
