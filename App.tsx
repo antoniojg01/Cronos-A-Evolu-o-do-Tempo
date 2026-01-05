@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period, TaskStep } from './types.ts';
+import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel } from './types.ts';
 import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED, XP_STEP } from './constants.ts';
 import { getLevelNarrative } from './services/geminiService.ts';
 import TimerModal from './components/TimerModal.tsx';
@@ -41,6 +40,7 @@ const App: React.FC = () => {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'DAILY' | 'ROUTINE'>('DAILY');
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<PriorityLevel>(2);
   const [tempSteps, setTempSteps] = useState<string[]>([]);
   const [newStepInput, setNewStepInput] = useState('');
   const [selectedPeriodForAdd, setSelectedPeriodForAdd] = useState<string>('');
@@ -49,6 +49,13 @@ const App: React.FC = () => {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showPeriodManager, setShowPeriodManager] = useState(false);
   const [statPeriod, setStatPeriod] = useState<StatPeriod>('DAY');
+
+  // TRIGGER PARA ESCONDER O LOADER DO INDEX.HTML
+  useEffect(() => {
+    if ((window as any).hideAppLoader) {
+      (window as any).hideAppLoader();
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('cronos_tasks', JSON.stringify(tasks));
@@ -107,12 +114,18 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     const newTask: Task = { 
-      id: crypto.randomUUID(), title: newTaskTitle, type: activeSubTab, status: 'PENDING', createdAt: Date.now(),
+      id: crypto.randomUUID(), 
+      title: newTaskTitle, 
+      type: activeSubTab, 
+      priority: newTaskPriority,
+      status: 'PENDING', 
+      createdAt: Date.now(),
       periodId: selectedPeriodForAdd || undefined,
       steps: tempSteps.map(s => ({ id: crypto.randomUUID(), title: s, completed: false }))
     };
     setTasks([...tasks, newTask]);
     setNewTaskTitle('');
+    setNewTaskPriority(2);
     setTempSteps([]);
   };
 
@@ -162,6 +175,18 @@ const App: React.FC = () => {
   const currentLevel = LEVELS.find(l => l.level === stats.level) || LEVELS[0];
   const nextLevel = LEVELS.find(l => l.level === (stats.level || 1) + 1);
   const progressPercent = nextLevel ? (((stats.xp || 0) - currentLevel.xpRequired) / (nextLevel.xpRequired - currentLevel.xpRequired)) * 100 : 100;
+
+  const priorityStyles = {
+    1: "border-red-500/40 text-red-400",
+    2: "border-indigo-500/40 text-indigo-400",
+    3: "border-slate-500/40 text-slate-500"
+  };
+
+  const priorityLabels = {
+    1: "Protocolo Alfa (Alta)",
+    2: "Sincronia Beta (Média)",
+    3: "Fluxo Gamma (Baixa)"
+  };
 
   return (
     <div className="h-screen w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden">
@@ -238,46 +263,86 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <form onSubmit={addTask} className="mb-16 space-y-6">
+              <form onSubmit={addTask} className="mb-16 p-8 md:p-12 bg-slate-900/20 border border-white/5 rounded-[3rem] shadow-inner space-y-8">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar objetivo..." : "Estabelecer rotina..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-900/40 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl" />
+                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar objetivo..." : "Estabelecer rotina..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-950/50 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl" />
                   <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-300 transition-all shadow-xl">Fixar Protocolo</button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pl-4">
-                   <div className="flex items-center gap-4">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Alocar em:</span>
-                      <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="bg-slate-900/60 border border-white/10 rounded-xl px-5 py-2.5 text-[10px] md:text-xs font-bold text-indigo-300">
-                        {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        <option value="">Sem alocação</option>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                   <div className="space-y-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Importância:</span>
+                      <div className="flex gap-2">
+                         {[1, 2, 3].map((p) => (
+                           <button key={p} type="button" onClick={() => setNewTaskPriority(p as PriorityLevel)} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-widest border transition-all ${newTaskPriority === p ? (p === 1 ? 'bg-red-500/20 border-red-500 text-red-400' : p === 2 ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-700/40 border-slate-500 text-slate-400') : 'border-white/5 text-slate-600 hover:border-white/10'}`}>
+                             {p === 1 ? 'Alta' : p === 2 ? 'Média' : 'Baixa'}
+                           </button>
+                         ))}
+                      </div>
+                   </div>
+
+                   <div className="space-y-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Alocar em:</span>
+                      <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs font-bold text-indigo-300 outline-none focus:border-indigo-500/50">
+                        {periods.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>)}
+                        <option value="" className="bg-slate-900">Sem alocação</option>
                       </select>
                    </div>
-                   <div className="space-y-4">
+
+                   <div className="space-y-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Sub-processos:</span>
                       <div className="flex gap-2">
-                        <input type="text" placeholder="Sub-processo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="flex-1 h-10 bg-slate-900/30 border border-white/5 rounded-xl px-4 text-xs text-white" />
-                        <button type="button" onClick={() => { if(newStepInput.trim()) setTempSteps([...tempSteps, newStepInput]); setNewStepInput(''); }} className="px-4 bg-slate-800 text-white rounded-xl">+</button>
+                        <input type="text" placeholder="Adicionar passo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="flex-1 h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs text-white outline-none focus:border-indigo-500/50" />
+                        <button type="button" onClick={() => { if(newStepInput.trim()) setTempSteps([...tempSteps, newStepInput]); setNewStepInput(''); }} className="w-12 h-[52px] bg-slate-800 text-white rounded-2xl hover:bg-slate-700 transition-colors">+</button>
                       </div>
-                      <div className="flex flex-wrap gap-2">{tempSteps.map((s, i) => <div key={i} className="flex items-center gap-2 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg"><span className="text-[10px] text-indigo-300">{s}</span><button type="button" onClick={() => setTempSteps(tempSteps.filter((_, idx) => idx !== i))} className="text-red-400">&times;</button></div>)}</div>
+                      <div className="flex flex-wrap gap-2 mt-2">{tempSteps.map((s, i) => <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl animate-in zoom-in"><span className="text-[10px] text-indigo-300 font-bold uppercase">{s}</span><button type="button" onClick={() => setTempSteps(tempSteps.filter((_, idx) => idx !== i))} className="text-red-400 text-xs font-bold hover:scale-125 transition-transform">&times;</button></div>)}</div>
                    </div>
                 </div>
               </form>
 
-              <div className="space-y-16">
+              <div className="space-y-20">
                 {[...periods, { id: 'unassigned', name: 'Não Alocados' }].filter(p => filterPeriodId === 'all' || filterPeriodId === p.id).map(period => {
-                    const pTasks = tasks.filter(t => t.type === activeSubTab && (t.periodId === period.id || (period.id === 'unassigned' && !t.periodId)));
+                    const pTasks = tasks
+                      .filter(t => t.type === activeSubTab && (t.periodId === period.id || (period.id === 'unassigned' && !t.periodId)))
+                      .sort((a, b) => (a.priority || 2) - (b.priority || 2));
+                    
                     if (pTasks.length === 0) return null;
                     return (
-                      <div key={period.id} className="animate-in fade-in">
-                        <h4 className="text-[11px] font-bold text-indigo-400/60 uppercase tracking-[0.5em] mb-6 ml-6 flex items-center gap-4"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500/40" />{period.name}</h4>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div key={period.id} className="animate-in fade-in slide-in-from-bottom-6">
+                        <h4 className="text-[11px] font-bold text-indigo-400/60 uppercase tracking-[0.5em] mb-8 ml-8 flex items-center gap-5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500/40 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                          {period.name}
+                        </h4>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                           {pTasks.map(task => (
-                            <div key={task.id} onClick={() => setActiveTask(task)} className={`p-6 md:p-8 bg-slate-900/30 border border-white/5 rounded-[2.5rem] hover:bg-slate-900/50 transition-all cursor-pointer overflow-hidden ${task.status === 'COMPLETED' ? 'opacity-50 grayscale' : 'shadow-2xl'}`}>
-                              <div className="flex items-start justify-between mb-4">
-                                <h3 className={`text-xl md:text-2xl font-space font-medium ${task.status === 'COMPLETED' ? 'line-through text-slate-500' : 'text-white'}`}>{task.title}</h3>
-                                <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="text-slate-700 hover:text-red-500 transition-colors">&times;</button>
+                            <div 
+                              key={task.id} 
+                              onClick={() => setActiveTask(task)} 
+                              className={`group relative p-8 md:p-10 bg-slate-900/30 border-2 rounded-[3.5rem] hover:bg-slate-900/50 transition-all cursor-pointer overflow-hidden ${task.status === 'COMPLETED' ? 'opacity-40 grayscale border-white/5' : `shadow-2xl ${priorityStyles[task.priority || 2]}`}`}
+                            >
+                              {/* Indicador de Prioridade Visual */}
+                              <div className={`absolute top-0 right-10 h-1 w-20 rounded-b-full ${task.priority === 1 ? 'bg-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : task.priority === 2 ? 'bg-indigo-500/60' : 'bg-slate-700/60'}`} />
+                              
+                              <div className="flex items-start justify-between mb-6">
+                                <div>
+                                  <span className={`text-[9px] font-bold uppercase tracking-widest block mb-2 opacity-60 ${task.priority === 1 ? 'text-red-400' : 'text-indigo-400'}`}>
+                                    {priorityLabels[task.priority || 2]}
+                                  </span>
+                                  <h3 className={`text-2xl md:text-3xl font-space font-bold tracking-tight ${task.status === 'COMPLETED' ? 'line-through text-slate-500' : 'text-white'}`}>
+                                    {task.title}
+                                  </h3>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="text-slate-800 hover:text-red-500 transition-colors p-2">&times;</button>
                               </div>
+
                               {task.steps && task.steps.length > 0 && (
-                                <div className="grid grid-cols-2 gap-2 mt-4" onClick={e => e.stopPropagation()}>
-                                  {task.steps.map(s => <div key={s.id} onClick={() => toggleStep(task.id, s.id)} className={`px-3 py-2 rounded-xl border transition-all flex items-center gap-2 ${s.completed ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200' : 'bg-slate-950/40 border-white/5 text-slate-500'}`}><div className={`w-2.5 h-2.5 rounded-full ${s.completed ? 'bg-indigo-400' : 'bg-slate-800'}`} /> <span className="text-[10px] font-bold truncate">{s.title}</span></div>)}
+                                <div className="grid grid-cols-2 gap-3 mt-6" onClick={e => e.stopPropagation()}>
+                                  {task.steps.map(s => (
+                                    <div key={s.id} onClick={() => toggleStep(task.id, s.id)} className={`px-4 py-3 rounded-2xl border transition-all flex items-center gap-3 ${s.completed ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200' : 'bg-slate-950/40 border-white/5 text-slate-600'}`}>
+                                      <div className={`w-3 h-3 rounded-full border-2 ${s.completed ? 'bg-indigo-400 border-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.6)]' : 'bg-slate-800 border-slate-700'}`} />
+                                      <span className="text-[10px] font-bold truncate uppercase tracking-tighter">{s.title}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>

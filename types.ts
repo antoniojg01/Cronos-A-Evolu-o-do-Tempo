@@ -1,5 +1,6 @@
 
 export type TaskType = 'DAILY' | 'ROUTINE';
+export type PriorityLevel = 1 | 2 | 3; // 1: Alta, 2: Média, 3: Baixa
 
 export interface Period {
   id: string;
@@ -16,6 +17,7 @@ export interface Task {
   id: string;
   title: string;
   type: TaskType;
+  priority: PriorityLevel;
   periodId?: string; // Para rotinas
   completedAt?: number;
   lastDone?: number; // Para rotinas acompanharem o reset diário
