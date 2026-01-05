@@ -1,0 +1,7 @@
+{
+  "name": "Cronos: A Evolução do Tempo",
+  "description": "Um gerenciador de tarefas e rotinas gamificado onde cada conquista te leva do Big Bang aos dias atuais através da história do universo.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
