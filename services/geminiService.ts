@@ -4,8 +4,10 @@ import { LevelInfo } from "../types.ts";
 
 export async function getLevelNarrative(level: LevelInfo): Promise<string> {
   try {
-    // Instanciação dentro da função para evitar erros globais de carregamento
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY;
+    if (!apiKey) throw new Error("API_KEY_MISSING");
+
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
