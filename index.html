@@ -22,28 +22,18 @@
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             background: #020617; z-index: 9999;
-            transition: opacity 0.4s ease-out;
+            transition: opacity 0.5s ease-out;
         }
     </style>
     <script>
-        // Setup imediato do ambiente
         window.process = { env: { API_KEY: "" } };
-        
         window.hideAppLoader = function() {
             const loader = document.getElementById('app-loader');
             if (loader) {
                 loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 400);
+                setTimeout(() => loader.remove(), 500);
             }
         };
-
-        // Se em 4 segundos o JS não responder, forçamos a entrada
-        setTimeout(() => {
-            if (document.getElementById('app-loader')) {
-                console.warn("Loader removido por timeout de segurança.");
-                window.hideAppLoader();
-            }
-        }, 4000);
     </script>
     <script type="importmap">
 {
