@@ -1,9 +1,10 @@
 
-import { LevelInfo } from './types';
+import { LevelInfo } from './types.ts';
 
 export const XP_COMPLETED = 5;
 export const XP_GAVE_UP = 3;
 export const XP_IGNORED = -3;
+export const XP_STEP = 1;
 
 export const LEVELS: LevelInfo[] = [
   { level: 1, name: "A Singularidade", xpRequired: 0, storyEra: "O Big Bang" },

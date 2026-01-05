@@ -6,6 +6,12 @@ export interface Period {
   name: string;
 }
 
+export interface TaskStep {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -15,6 +21,7 @@ export interface Task {
   lastDone?: number; // Para rotinas acompanharem o reset diário
   status: 'PENDING' | 'COMPLETED' | 'GAVE_UP' | 'IGNORED';
   createdAt: number;
+  steps?: TaskStep[];
 }
 
 export interface TimeLog {

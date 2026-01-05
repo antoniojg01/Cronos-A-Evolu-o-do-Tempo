@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period } from './types.ts';
-import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED } from './constants.ts';
+import { Task, UserStats, TimeLog, Period, TaskStep } from './types.ts';
+import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED, XP_STEP } from './constants.ts';
 import { getLevelNarrative } from './services/geminiService.ts';
 import TimerModal from './components/TimerModal.tsx';
 import UniverseVisual from './components/UniverseVisual.tsx';
@@ -40,6 +40,11 @@ const App: React.FC = () => {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'DAILY' | 'ROUTINE'>('DAILY');
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  
+  // States para novos steps
+  const [tempSteps, setTempSteps] = useState<string[]>([]);
+  const [newStepInput, setNewStepInput] = useState('');
+
   const [selectedPeriodForAdd, setSelectedPeriodForAdd] = useState<string>('');
   const [filterPeriodId, setFilterPeriodId] = useState<string | 'all'>('all');
   const [newPeriodName, setNewPeriodName] = useState('');
@@ -79,7 +84,7 @@ const App: React.FC = () => {
   };
 
   const handleExport = () => {
-    const data = { tasks, stats, periods, exportedAt: new Date().toISOString(), version: "1.3.0" };
+    const data = { tasks, stats, periods, exportedAt: new Date().toISOString(), version: "1.3.1" };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -112,18 +117,19 @@ const App: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const updateStats = (xpChange: number, status: 'COMPLETED' | 'GAVE_UP' | 'IGNORED', secondsSpent: number = 0) => {
+  const updateStats = (xpChange: number, status: 'COMPLETED' | 'GAVE_UP' | 'IGNORED' | 'STEP_COMPLETED', secondsSpent: number = 0, specificTask?: Task) => {
     setStats(prev => {
       let newXp = Math.max(0, prev.xp + xpChange);
       const nextLevel = LEVELS.find(l => l.xpRequired > newXp);
       let newLevel = nextLevel ? nextLevel.level - 1 : LEVELS[LEVELS.length - 1].level;
       newLevel = Math.max(1, newLevel);
 
+      const logTask = specificTask || activeTask;
       const newLog: TimeLog | null = secondsSpent > 0 ? {
         timestamp: Date.now(),
         seconds: secondsSpent,
-        taskId: activeTask?.id || 'unknown',
-        taskTitle: activeTask?.title || 'Tarefa síncrona'
+        taskId: logTask?.id || 'unknown',
+        taskTitle: logTask?.title || 'Tarefa síncrona'
       } : null;
 
       return {
@@ -141,16 +147,58 @@ const App: React.FC = () => {
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
+
+    const formattedSteps: TaskStep[] = tempSteps.map(s => ({
+      id: crypto.randomUUID(),
+      title: s,
+      completed: false
+    }));
+
     const newTask: Task = { 
       id: crypto.randomUUID(), 
       title: newTaskTitle, 
       type: activeSubTab, 
       status: 'PENDING', 
       createdAt: Date.now(),
-      periodId: selectedPeriodForAdd || undefined
+      periodId: selectedPeriodForAdd || undefined,
+      steps: formattedSteps.length > 0 ? formattedSteps : undefined
     };
+
     setTasks([...tasks, newTask]);
     setNewTaskTitle('');
+    setTempSteps([]);
+  };
+
+  const addTempStep = () => {
+    if (!newStepInput.trim()) return;
+    setTempSteps([...tempSteps, newStepInput]);
+    setNewStepInput('');
+  };
+
+  const removeTempStep = (index: number) => {
+    setTempSteps(tempSteps.filter((_, i) => i !== index));
+  };
+
+  const toggleStep = (taskId: string, stepId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !task.steps) return;
+
+    const newTasks = tasks.map(t => {
+      if (t.id === taskId && t.steps) {
+        const newSteps = t.steps.map(s => {
+          if (s.id === stepId) {
+            const nowCompleted = !s.completed;
+            if (nowCompleted) updateStats(XP_STEP, 'STEP_COMPLETED', 0, t);
+            else updateStats(-XP_STEP, 'STEP_COMPLETED', 0, t);
+            return { ...s, completed: nowCompleted };
+          }
+          return s;
+        });
+        return { ...t, steps: newSteps };
+      }
+      return t;
+    });
+    setTasks(newTasks);
   };
 
   const addPeriod = () => {
@@ -170,6 +218,7 @@ const App: React.FC = () => {
   const handleTaskAction = (status: 'COMPLETED' | 'GAVE_UP' | 'IGNORED', seconds: number) => {
     if (!activeTask) return;
     updateStats(status === 'COMPLETED' ? XP_COMPLETED : status === 'GAVE_UP' ? XP_GAVE_UP : XP_IGNORED, status, seconds);
+    
     if (activeTask.type === 'DAILY') {
       setTasks(tasks.filter(t => t.id !== activeTask.id));
     } else {
@@ -312,21 +361,41 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <form onSubmit={addTask} className="mb-16 space-y-5">
+              <form onSubmit={addTask} className="mb-16 space-y-6">
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar novo objetivo diário..." : "Estabelecer nova rotina cíclica..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-900/40 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50 transition-all" />
-                  <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-400 hover:scale-[1.02] active:scale-95 transition-all shadow-xl">Fixar</button>
+                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar novo objetivo diário..." : "Estabelecer nova rotina cíclica..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-900/40 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50 transition-all shadow-2xl" />
+                  <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-300 hover:scale-[1.02] active:scale-95 transition-all shadow-xl">Fixar Protocolo</button>
                 </div>
                 
-                {periods.length > 0 && (
-                  <div className="flex items-center gap-4 animate-in fade-in slide-in-from-left-2 pl-4">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Alocar em:</span>
-                    <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="bg-slate-900/60 border border-white/10 rounded-xl px-5 py-2.5 text-[10px] md:text-xs font-bold text-indigo-300 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer">
-                      {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      <option value="">Sem alocação específica</option>
-                    </select>
-                  </div>
-                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pl-4">
+                   <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Alocar em:</span>
+                        <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="bg-slate-900/60 border border-white/10 rounded-xl px-5 py-2.5 text-[10px] md:text-xs font-bold text-indigo-300 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer">
+                          {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          <option value="">Sem alocação específica</option>
+                        </select>
+                      </div>
+                   </div>
+
+                   <div className="space-y-4">
+                      <div className="flex items-center gap-4 mb-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Adicionar Steps:</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input type="text" placeholder="Adicionar sub-processo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTempStep())} className="flex-1 h-10 bg-slate-900/30 border border-white/5 rounded-xl px-4 text-xs text-white focus:outline-none focus:border-indigo-500/50" />
+                        <button type="button" onClick={addTempStep} className="px-4 bg-slate-800 text-white rounded-xl text-xs font-bold">+</button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {tempSteps.map((s, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg animate-in zoom-in-50 duration-300">
+                            <span className="text-[10px] text-indigo-300 font-medium">{s}</span>
+                            <button type="button" onClick={() => removeTempStep(i)} className="text-red-400 text-xs font-bold">&times;</button>
+                          </div>
+                        ))}
+                      </div>
+                   </div>
+                </div>
               </form>
 
               {/* Grid de Tarefas */}
@@ -340,24 +409,52 @@ const App: React.FC = () => {
                     return (
                       <div key={period.id} className="animate-in fade-in slide-in-from-bottom-2">
                         <h4 className="text-[11px] font-bold text-indigo-400/60 uppercase tracking-[0.5em] mb-6 ml-6 flex items-center gap-4">
-                          <span className={`w-2.5 h-2.5 rounded-full ${activeSubTab === 'DAILY' ? 'bg-pink-500/40 shadow-[0_0_8px_rgba(236,72,153,0.3)]' : 'bg-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.3)]'}`} />
+                          <span className={`w-2.5 h-2.5 rounded-full ${activeSubTab === 'DAILY' ? 'bg-pink-500/40' : 'bg-cyan-500/40'}`} />
                           {period.name}
                         </h4>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                          {periodTasks.map(task => (
-                            <div key={task.id} onClick={() => (task.type === 'ROUTINE' || task.status === 'PENDING') && setActiveTask(task)} className={`group relative flex items-center justify-between p-6 md:p-8 bg-slate-900/20 border border-white/5 rounded-[2.5rem] hover:bg-slate-900/40 hover:border-indigo-500/30 transition-all cursor-pointer overflow-hidden ${task.status === 'COMPLETED' ? 'opacity-60 grayscale-[0.5]' : 'shadow-lg hover:shadow-indigo-500/5'}`}>
-                              <div className="flex items-center gap-6 md:gap-8 z-10">
-                                <div className={`w-2 h-14 md:h-16 rounded-full transition-all duration-500 ${task.status === 'COMPLETED' ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : (task.type === 'DAILY' ? 'bg-pink-500' : 'bg-cyan-500')} group-hover:scale-y-110`} />
-                                <div>
-                                  <h3 className={`text-xl md:text-2xl font-space font-medium transition-colors ${task.status === 'COMPLETED' ? 'text-slate-500 line-through' : 'text-white group-hover:text-indigo-300'}`}>{task.title}</h3>
-                                  {task.lastDone && <p className="text-[9px] uppercase tracking-widest text-slate-600 font-bold mt-2">Última Sincronização: {new Date(task.lastDone).toLocaleTimeString()}</p>}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {periodTasks.map(task => {
+                            const completedSteps = task.steps?.filter(s => s.completed).length || 0;
+                            const totalSteps = task.steps?.length || 0;
+                            const stepProgress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
+
+                            return (
+                              <div key={task.id} onClick={() => (task.type === 'ROUTINE' || task.status === 'PENDING') && setActiveTask(task)} className={`group relative p-6 md:p-8 bg-slate-900/30 border border-white/5 rounded-[2.5rem] hover:bg-slate-900/50 hover:border-indigo-500/30 transition-all cursor-pointer overflow-hidden ${task.status === 'COMPLETED' ? 'opacity-50 grayscale' : 'shadow-2xl hover:shadow-indigo-500/10'}`}>
+                                <div className="flex items-start justify-between mb-6">
+                                  <div className="flex items-center gap-6">
+                                    <div className={`w-1.5 h-12 rounded-full transition-all duration-500 ${task.status === 'COMPLETED' ? 'bg-emerald-500' : (task.type === 'DAILY' ? 'bg-pink-500' : 'bg-cyan-500')} group-hover:h-14`} />
+                                    <div>
+                                      <h3 className={`text-xl md:text-2xl font-space font-medium transition-colors ${task.status === 'COMPLETED' ? 'text-slate-500 line-through' : 'text-white group-hover:text-indigo-200'}`}>{task.title}</h3>
+                                      {task.lastDone && <p className="text-[9px] uppercase tracking-widest text-slate-600 font-bold mt-2">Sincronizado: {new Date(task.lastDone).toLocaleTimeString()}</p>}
+                                    </div>
+                                  </div>
+                                  <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="p-3 text-slate-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
                                 </div>
+
+                                {totalSteps > 0 && (
+                                  <div className="mt-4 space-y-4" onClick={e => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-indigo-400/60 mb-2">
+                                      <span>Nódulos de Memória</span>
+                                      <span>{completedSteps}/{totalSteps}</span>
+                                    </div>
+                                    <div className="w-full h-1 bg-slate-950 rounded-full overflow-hidden mb-4">
+                                      <div className="h-full bg-indigo-500 transition-all duration-700" style={{ width: `${stepProgress}%` }} />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {task.steps?.map(step => (
+                                        <div key={step.id} onClick={() => toggleStep(task.id, step.id)} className={`flex items-center gap-3 px-3 py-2 rounded-xl border transition-all ${step.completed ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-200' : 'bg-slate-950/40 border-white/5 text-slate-500 hover:border-white/10'}`}>
+                                          <div className={`w-3 h-3 rounded-full border-2 transition-all ${step.completed ? 'bg-indigo-400 border-indigo-300 shadow-[0_0_8px_rgba(129,140,248,0.5)]' : 'border-slate-800'}`} />
+                                          <span className="text-[10px] font-bold truncate tracking-tight">{step.title}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="p-4 text-slate-800 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-20" title="Desintegrar">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                              </button>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -380,7 +477,7 @@ const App: React.FC = () => {
                         <div className="absolute top-8 left-8 bg-slate-900/90 backdrop-blur-md border border-white/10 px-6 py-3 rounded-2xl shadow-xl">
                             <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-[0.3em] flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping"></span>
-                                Visualizador Cronológico v4.0
+                                Visualizador Cronológico v4.1
                             </span>
                         </div>
                     </div>
