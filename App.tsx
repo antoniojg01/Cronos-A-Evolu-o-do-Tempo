@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period } from './types';
-import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED } from './constants';
-import { getLevelNarrative } from './services/geminiService';
-import TimerModal from './components/TimerModal';
-import UniverseVisual from './components/UniverseVisual';
+import { Task, UserStats, TimeLog, Period } from './types.ts';
+import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED } from './constants.ts';
+import { getLevelNarrative } from './services/geminiService.ts';
+import TimerModal from './components/TimerModal.tsx';
+import UniverseVisual from './components/UniverseVisual.tsx';
 
 type MainView = 'DASHBOARD' | 'EVOLUTION' | 'STATISTICS';
 type StatPeriod = 'DAY' | 'MONTH' | 'YEAR';
@@ -269,7 +269,7 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              {/* Filtros de Período Otimizados para Monitores Largos */}
+              {/* Filtros de Período */}
               <div className="flex items-center gap-3 mb-10 overflow-x-auto pb-4 scrollbar-hide">
                 <button 
                   onClick={() => setFilterPeriodId('all')}
@@ -329,7 +329,7 @@ const App: React.FC = () => {
                 )}
               </form>
 
-              {/* Grid de Tarefas Otimizado */}
+              {/* Grid de Tarefas */}
               <div className="space-y-16">
                 {[...periods, { id: 'unassigned', name: 'Alocações Indefinidas' }]
                   .filter(p => filterPeriodId === 'all' || filterPeriodId === p.id)
@@ -362,12 +362,6 @@ const App: React.FC = () => {
                       </div>
                     );
                 })}
-                
-                {tasks.filter(t => t.type === activeSubTab).length === 0 && (
-                  <div className="py-32 text-center border-2 border-dashed border-white/5 rounded-[4rem] bg-slate-900/10">
-                    <p className="text-slate-600 uppercase tracking-[0.5em] text-sm font-bold">Campo cronológico aguardando entrada de dados</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -380,7 +374,6 @@ const App: React.FC = () => {
               </header>
 
               <div className="grid lg:grid-cols-12 gap-8 md:gap-12 items-stretch">
-                {/* Visualizador do Universo em Estilo Isométrico */}
                 <div className="lg:col-span-12 h-[350px] md:h-[500px] relative">
                     <div className="absolute inset-0 bg-slate-950/80 rounded-[4rem] border border-white/10 overflow-hidden shadow-2xl backdrop-blur-sm">
                         <UniverseVisual level={stats.level} />
@@ -403,10 +396,6 @@ const App: React.FC = () => {
                     <p className="text-indigo-400 text-[10px] md:text-[11px] font-bold tracking-[0.4em] uppercase mb-10">{currentLevel.storyEra}</p>
                     <div className="w-full h-3 bg-slate-950 rounded-full border border-white/10 overflow-hidden relative shadow-inner">
                         <div className="h-full bg-gradient-to-r from-indigo-600 via-purple-500 to-cyan-400 transition-all duration-1000 shadow-[0_0_15px_rgba(99,102,241,0.5)]" style={{ width: `${progressPercent}%` }} />
-                    </div>
-                    <div className="flex justify-between w-full mt-3 px-1">
-                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{stats.xp} XP</span>
-                        <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">{nextLevel?.xpRequired || 'MAX'} XP</span>
                     </div>
                   </div>
                 </div>
@@ -469,33 +458,12 @@ const App: React.FC = () => {
                   </span>
                 </div>
               </div>
-
-              <div className="bg-slate-900/10 border border-white/5 rounded-[4rem] p-12 md:p-16 shadow-inner">
-                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.5em] mb-12">Distribuição de Fluxo</h3>
-                <div className="space-y-10">
-                  {aggregatedData.byTask.length > 0 ? aggregatedData.byTask.map(([title, seconds]: any) => (
-                    <div key={title} className="group space-y-4">
-                      <div className="flex justify-between text-xs md:text-sm font-bold uppercase tracking-widest transition-all group-hover:px-2">
-                        <span className="text-slate-400 group-hover:text-white">{title}</span>
-                        <span className="text-indigo-400 group-hover:scale-110">{formatDuration(seconds)}</span>
-                      </div>
-                      <div className="h-3 bg-slate-950 rounded-full overflow-hidden shadow-inner border border-white/5">
-                        <div className="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-out" style={{ width: `${(seconds / (aggregatedData.totalSeconds || 1)) * 100}%` }} />
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="py-24 text-center border-2 border-dashed border-white/5 rounded-[3rem] bg-slate-900/5">
-                      <p className="text-slate-600 uppercase tracking-widest text-xs font-bold">Aguardando telemetria de protocolos...</p>
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* Backup Modal Responsive */}
+      {/* Backup Modal */}
       {showBackupModal && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-3xl flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
           <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[3.5rem] p-10 md:p-16 shadow-[0_30px_100px_rgba(0,0,0,0.9)]">

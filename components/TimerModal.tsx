@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Task, TimerMode } from '../types';
+import { Task, TimerMode } from '../types.ts';
 
 interface TimerModalProps {
   task: Task;
@@ -21,7 +21,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   const [stopwatchTime, setStopwatchTime] = useState(0);
   const [totalAccumulatedSeconds, setTotalAccumulatedSeconds] = useState(0);
   
-  // Estados para efeitos visuais
   const [isFinished, setIsFinished] = useState(false);
   const [flashType, setFlashType] = useState<'NONE' | 'SUCCESS' | 'WARNING' | 'DANGER'>('NONE');
 
@@ -41,7 +40,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
               if (mode === 'POMODORO') {
                 const nextIsBreak = !isBreak;
                 setIsBreak(nextIsBreak);
-                // Pequeno efeito visual de transição de fase
                 triggerFlash(nextIsBreak ? 'SUCCESS' : 'WARNING');
                 return (nextIsBreak ? breakDuration : workDuration) * 60;
               } else {
@@ -107,7 +105,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   const handleFinalize = (status: 'COMPLETED' | 'GAVE_UP' | 'IGNORED') => {
     const type = status === 'COMPLETED' ? 'SUCCESS' : status === 'GAVE_UP' ? 'WARNING' : 'DANGER';
     triggerFlash(type);
-    // Pequeno atraso para o usuário ver o feedback visual antes do modal fechar
     setTimeout(() => {
       onComplete(status, totalAccumulatedSeconds);
     }, 400);
@@ -115,8 +112,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
 
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center z-50 p-6 animate-in fade-in zoom-in duration-300">
-      
-      {/* Efeito de Flash na Tela */}
       <div className={`fixed inset-0 pointer-events-none z-[60] transition-opacity duration-500 opacity-0 ${
         flashType === 'SUCCESS' ? 'bg-emerald-500/20 opacity-100' :
         flashType === 'WARNING' ? 'bg-amber-500/20 opacity-100' :
@@ -151,41 +146,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             ))}
           </div>
 
-          {!isActive && (
-            <div className="flex justify-center gap-6 mb-8 animate-in fade-in slide-in-from-top-2">
-              {mode === 'POMODORO' && (
-                <>
-                  <div className="text-center">
-                    <label className="block text-[8px] uppercase tracking-widest text-slate-500 mb-1">Foco (min)</label>
-                    <input 
-                      type="number" 
-                      value={workDuration} 
-                      onChange={(e) => {
-                        const val = Math.max(1, parseInt(e.target.value) || 1);
-                        setWorkDuration(val);
-                        if (!isBreak) setTimeLeft(val * 60);
-                      }}
-                      className="w-16 bg-slate-800 border border-white/5 rounded-lg p-2 text-white text-center font-bold focus:outline-none focus:border-purple-500"
-                    />
-                  </div>
-                  <div className="text-center">
-                    <label className="block text-[8px] uppercase tracking-widest text-slate-500 mb-1">Pausa (min)</label>
-                    <input 
-                      type="number" 
-                      value={breakDuration} 
-                      onChange={(e) => {
-                        const val = Math.max(1, parseInt(e.target.value) || 1);
-                        setBreakDuration(val);
-                        if (isBreak) setTimeLeft(val * 60);
-                      }}
-                      className="w-16 bg-slate-800 border border-white/5 rounded-lg p-2 text-white text-center font-bold focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="relative flex items-center justify-center mb-10">
             <svg className="w-56 h-56 -rotate-90">
               <circle cx="112" cy="112" r="104" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-800" />
@@ -200,9 +160,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className={`text-5xl font-space font-bold text-white tracking-tighter tabular-nums ${isBreak ? 'text-emerald-400' : (isFinished ? 'text-indigo-300 animate-bounce' : '')}`}>
                 {mode === 'STOPWATCH' ? formatTime(stopwatchTime) : formatTime(timeLeft)}
-              </span>
-              <span className={`text-[9px] uppercase tracking-widest mt-2 font-bold ${isBreak ? 'text-emerald-500' : (isFinished ? 'text-indigo-400' : 'text-slate-500')}`}>
-                {isActive ? (isBreak ? 'Sincronizando Energia' : 'Protocolo em Curso') : (isFinished ? 'Sincronia Concluída' : 'Aguardando Início')}
               </span>
             </div>
           </div>
@@ -230,33 +187,14 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             <div className="flex gap-4">
               <button
                 onClick={() => handleFinalize('COMPLETED')}
-                className="flex-1 group relative h-16 bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 rounded-3xl overflow-hidden transition-all hover:bg-emerald-500 hover:text-white hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] active:scale-95"
+                className="flex-1 group relative h-16 bg-emerald-600/10 border border-emerald-500/30 text-emerald-400 rounded-3xl overflow-hidden transition-all hover:bg-emerald-500 hover:text-white active:scale-95"
               >
                 <div className="relative z-10 flex flex-col items-center justify-center">
                   <span className="font-space font-bold text-sm tracking-tight leading-none mb-1">Concluir</span>
                   <span className="text-[9px] uppercase tracking-widest opacity-70 font-bold">+5 Pontos</span>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-tr from-emerald-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-
-              <button
-                onClick={() => handleFinalize('GAVE_UP')}
-                className="flex-1 group relative h-16 bg-amber-600/10 border border-amber-500/30 text-amber-400 rounded-3xl overflow-hidden transition-all hover:bg-amber-500 hover:text-white hover:shadow-[0_0_30px_rgba(245,158,11,0.3)] active:scale-95"
-              >
-                <div className="relative z-10 flex flex-col items-center justify-center">
-                  <span className="font-space font-bold text-sm tracking-tight leading-none mb-1">Desistir</span>
-                  <span className="text-[9px] uppercase tracking-widest opacity-70 font-bold">+3 Pontos</span>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-tr from-amber-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             </div>
-
-            <button
-              onClick={() => handleFinalize('IGNORED')}
-              className="w-full h-12 bg-slate-950/40 border border-white/5 text-slate-600 rounded-2xl font-bold text-[10px] uppercase tracking-[0.3em] transition-all hover:border-red-500/30 hover:text-red-500 hover:bg-red-500/5 active:scale-95"
-            >
-              Ignorar Protocolo (-3 XP)
-            </button>
           </div>
         </div>
       </div>
