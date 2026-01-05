@@ -21,7 +21,7 @@
             width: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* Garante que o scroll seja controlado pelos componentes internos */
+            overflow: hidden;
             background-color: #020617;
             color: #f8fafc;
             font-family: 'Inter', sans-serif;
@@ -37,7 +37,6 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
         
-        /* Custom Scrollbar para elementos com overflow */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }
         ::-webkit-scrollbar-thumb { 
@@ -47,10 +46,13 @@
         }
         ::-webkit-scrollbar-thumb:hover { background: #334155; }
 
-        /* Utilitário para esconder scrollbar mantendo funcionalidade */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
+    <script>
+        // Evita erros de ReferenceError: process is not defined em ambientes sem bundler
+        window.process = window.process || { env: {} };
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -64,5 +66,6 @@
 </head>
 <body>
     <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>
