@@ -12,13 +12,6 @@ type StatPeriod = 'DAY' | 'MONTH' | 'YEAR';
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Loader effect
-  useEffect(() => {
-    if ((window as any).hideAppLoader) {
-      (window as any).hideAppLoader();
-    }
-  }, []);
-
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
       const saved = localStorage.getItem('cronos_tasks');
@@ -85,7 +78,7 @@ const App: React.FC = () => {
 
   const updateStats = (xpChange: number, status: string, secondsSpent: number = 0, specificTask?: Task) => {
     setStats(prev => {
-      let newXp = Math.max(0, prev.xp + xpChange);
+      let newXp = Math.max(0, (prev.xp || 0) + xpChange);
       const nextLevel = LEVELS.find(l => l.xpRequired > newXp);
       let newLevel = nextLevel ? nextLevel.level - 1 : LEVELS[LEVELS.length - 1].level;
       newLevel = Math.max(1, newLevel);
@@ -102,9 +95,9 @@ const App: React.FC = () => {
         ...prev,
         xp: newXp,
         level: newLevel,
-        completedCount: status === 'COMPLETED' ? prev.completedCount + 1 : prev.completedCount,
-        gaveUpCount: status === 'GAVE_UP' ? prev.gaveUpCount + 1 : prev.gaveUpCount,
-        ignoredCount: status === 'IGNORED' ? prev.ignoredCount + 1 : prev.ignoredCount,
+        completedCount: status === 'COMPLETED' ? (prev.completedCount || 0) + 1 : (prev.completedCount || 0),
+        gaveUpCount: status === 'GAVE_UP' ? (prev.gaveUpCount || 0) + 1 : (prev.gaveUpCount || 0),
+        ignoredCount: status === 'IGNORED' ? (prev.ignoredCount || 0) + 1 : (prev.ignoredCount || 0),
         timeLogs: newLog ? [...(prev.timeLogs || []), newLog] : (prev.timeLogs || [])
       };
     });
@@ -167,8 +160,8 @@ const App: React.FC = () => {
   }, [stats.timeLogs, statPeriod]);
 
   const currentLevel = LEVELS.find(l => l.level === stats.level) || LEVELS[0];
-  const nextLevel = LEVELS.find(l => l.level === stats.level + 1);
-  const progressPercent = nextLevel ? ((stats.xp - currentLevel.xpRequired) / (nextLevel.xpRequired - currentLevel.xpRequired)) * 100 : 100;
+  const nextLevel = LEVELS.find(l => l.level === (stats.level || 1) + 1);
+  const progressPercent = nextLevel ? (((stats.xp || 0) - currentLevel.xpRequired) / (nextLevel.xpRequired - currentLevel.xpRequired)) * 100 : 100;
 
   return (
     <div className="h-screen w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden">
@@ -197,7 +190,7 @@ const App: React.FC = () => {
           <button onClick={() => setShowBackupModal(true)} className="p-3 rounded-2xl text-slate-500 hover:text-indigo-400"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /></svg></button>
         </div>
         <div className="hidden md:flex flex-col items-center gap-6 mb-4">
-           <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-[10px] font-space font-bold text-slate-400">{stats.level}</div>
+           <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-[10px] font-space font-bold text-slate-400">{stats.level || 1}</div>
         </div>
       </nav>
 
@@ -261,7 +254,7 @@ const App: React.FC = () => {
                    <div className="space-y-4">
                       <div className="flex gap-2">
                         <input type="text" placeholder="Sub-processo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="flex-1 h-10 bg-slate-900/30 border border-white/5 rounded-xl px-4 text-xs text-white" />
-                        <button type="button" onClick={() => { setTempSteps([...tempSteps, newStepInput]); setNewStepInput(''); }} className="px-4 bg-slate-800 text-white rounded-xl">+</button>
+                        <button type="button" onClick={() => { if(newStepInput.trim()) setTempSteps([...tempSteps, newStepInput]); setNewStepInput(''); }} className="px-4 bg-slate-800 text-white rounded-xl">+</button>
                       </div>
                       <div className="flex flex-wrap gap-2">{tempSteps.map((s, i) => <div key={i} className="flex items-center gap-2 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg"><span className="text-[10px] text-indigo-300">{s}</span><button type="button" onClick={() => setTempSteps(tempSteps.filter((_, idx) => idx !== i))} className="text-red-400">&times;</button></div>)}</div>
                    </div>
@@ -304,9 +297,9 @@ const App: React.FC = () => {
                 <h1 className="text-6xl md:text-8xl font-space font-bold text-white tracking-tighter italic leading-none">A GRANDE EVOLUÇÃO</h1>
               </header>
               <div className="grid lg:grid-cols-12 gap-8 items-stretch">
-                <div className="lg:col-span-12 h-[350px] md:h-[500px] relative"><UniverseVisual level={stats.level} /></div>
+                <div className="lg:col-span-12 h-[350px] md:h-[500px] relative"><UniverseVisual level={stats.level || 1} /></div>
                 <div className="lg:col-span-5 bg-slate-900/30 border border-white/5 rounded-[4rem] p-10 flex flex-col items-center justify-center">
-                    <div className="w-40 h-40 rounded-full border-[10px] border-slate-900 flex items-center justify-center bg-slate-950 text-7xl font-space font-bold text-white mb-6">{stats.level}</div>
+                    <div className="w-40 h-40 rounded-full border-[10px] border-slate-900 flex items-center justify-center bg-slate-950 text-7xl font-space font-bold text-white mb-6">{stats.level || 1}</div>
                     <h2 className="text-2xl font-space font-bold text-white">{currentLevel.name}</h2>
                     <p className="text-indigo-400 text-[10px] font-bold tracking-[0.4em] uppercase">{currentLevel.storyEra}</p>
                 </div>
@@ -337,7 +330,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center">
                   <span className="text-[10px] font-bold text-pink-400 uppercase mb-6 block">XP Acumulado</span>
-                  <span className="text-5xl font-space font-bold text-white">{stats.xp}</span>
+                  <span className="text-5xl font-space font-bold text-white">{stats.xp || 0}</span>
                 </div>
               </div>
             </div>

@@ -4,8 +4,13 @@ import { LevelInfo } from "../types.ts";
 
 export async function getLevelNarrative(level: LevelInfo): Promise<string> {
   try {
-    const apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY;
-    if (!apiKey) throw new Error("API_KEY_MISSING");
+    // Uso de typeof para evitar ReferenceError se process não existir
+    const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : (window as any).process?.env?.API_KEY;
+    
+    if (!apiKey) {
+      console.warn("API Key não encontrada. Verifique as configurações.");
+      return `Você alcançou a era: ${level.storyEra}. Conecte sua chave para ver a narrativa detalhada.`;
+    }
 
     const ai = new GoogleGenAI({ apiKey });
     
