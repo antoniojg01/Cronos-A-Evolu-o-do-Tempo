@@ -51,6 +51,7 @@ const App: React.FC = () => {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showPeriodManager, setShowPeriodManager] = useState(false);
   const [statPeriod, setStatPeriod] = useState<StatPeriod>('DAY');
+  const [editingPeriodTaskId, setEditingPeriodTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if ((window as any).hideAppLoader) (window as any).hideAppLoader();
@@ -150,6 +151,11 @@ const App: React.FC = () => {
     }));
   };
 
+  const updateTaskPeriod = (taskId: string, newPeriodId: string) => {
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, periodId: newPeriodId || undefined } : t));
+    setEditingPeriodTaskId(null);
+  };
+
   const aggregatedData = useMemo(() => {
     const logs = stats.timeLogs || [];
     const now = new Date();
@@ -208,7 +214,7 @@ const App: React.FC = () => {
                 {periods.map(p => <button key={p.id} onClick={() => setFilterPeriodId(p.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border ${filterPeriodId === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-900/40 border-white/5 text-slate-500'}`}>{p.name}</button>)}
               </div>
 
-              {/* FORMULÁRIO DE INJEÇÃO ATUALIZADO */}
+              {/* FORMULÁRIO DE INJEÇÃO */}
               <form onSubmit={addTask} className="mb-16 p-8 md:p-12 bg-slate-900/20 border border-white/5 rounded-[3rem] shadow-inner space-y-8 animate-in slide-in-from-top-4">
                 <div className="flex flex-col sm:flex-row gap-4">
                   <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar objetivo..." : "Estabelecer rotina..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-950/50 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl" />
@@ -253,7 +259,7 @@ const App: React.FC = () => {
                 </div>
               </form>
 
-              {/* LISTA DE TAREFAS COM CHECK-IN DIRETO */}
+              {/* LISTA DE TAREFAS */}
               <div className="space-y-20">
                 {[...periods, { id: 'unassigned', name: 'Fluxo Livre' }].filter(p => filterPeriodId === 'all' || filterPeriodId === p.id).map(period => {
                     const pTasks = tasks
@@ -278,9 +284,35 @@ const App: React.FC = () => {
                               
                               <div className="flex items-start justify-between mb-6">
                                 <div className="max-w-[70%]">
-                                  <span className={`text-[8px] font-bold uppercase tracking-widest block mb-2 opacity-60 ${task.priority === 1 ? 'text-red-400' : 'text-indigo-400'}`}>
-                                    {priorityLabels[task.priority || 2]} • {task.completionMode === 'TIMER' ? 'Sincronizador' : 'Check-in'}
-                                  </span>
+                                  <div className="flex items-center gap-3 mb-2">
+                                    <span className={`text-[8px] font-bold uppercase tracking-widest opacity-60 ${task.priority === 1 ? 'text-red-400' : 'text-indigo-400'}`}>
+                                      {priorityLabels[task.priority || 2]}
+                                    </span>
+                                    
+                                    {/* SELETOR DE PERÍODO (EDIÇÃO) */}
+                                    <div className="relative" onClick={e => e.stopPropagation()}>
+                                      {editingPeriodTaskId === task.id ? (
+                                        <select 
+                                          autoFocus
+                                          className="bg-slate-950 border border-indigo-500/50 rounded-lg text-[8px] font-bold text-white uppercase px-2 py-0.5 outline-none animate-in zoom-in"
+                                          onBlur={() => setEditingPeriodTaskId(null)}
+                                          onChange={(e) => updateTaskPeriod(task.id, e.target.value)}
+                                          value={task.periodId || 'unassigned'}
+                                        >
+                                          {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                          <option value="unassigned">Fluxo Livre</option>
+                                        </select>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setEditingPeriodTaskId(task.id)}
+                                          className="px-2 py-0.5 rounded-lg border border-white/10 hover:border-indigo-500/40 text-[8px] font-bold text-slate-500 hover:text-indigo-300 uppercase tracking-widest transition-all"
+                                        >
+                                          {periods.find(p => p.id === task.periodId)?.name || 'Fluxo Livre'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
                                   <h3 className={`text-2xl md:text-3xl font-space font-bold tracking-tight leading-tight ${task.status !== 'PENDING' ? 'line-through text-slate-500' : 'text-white'}`}>
                                     {task.title}
                                   </h3>
