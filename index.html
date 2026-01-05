@@ -62,13 +62,19 @@
         // Inicialização de ambiente segura
         window.process = { 
             env: { 
-                API_KEY: "" // Será injetado pelo ambiente se disponível
+                API_KEY: "" // Será injetado pelo ambiente
             } 
         };
         
         // Captura de erros catastróficos para debug
         window.onerror = function(msg, url, line, col, error) {
             console.error("Erro Global CRONOS:", msg, "em", url, ":", line);
+            // Se o loader ainda estiver lá, removemos para não travar a tela
+            const loader = document.getElementById('app-loader');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }
             return false;
         };
     </script>
@@ -86,20 +92,33 @@
 </script>
 </head>
 <body>
-    <div id="root">
-        <div class="loading-screen" id="app-loader">
-            <div class="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
-            <p class="font-space text-indigo-400 text-xs tracking-[0.4em] uppercase animate-pulse">Sincronizando Arquivo Universal...</p>
-        </div>
+    <div id="root"></div>
+    
+    <div class="loading-screen" id="app-loader">
+        <div class="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+        <p class="font-space text-indigo-400 text-xs tracking-[0.4em] uppercase animate-pulse">Sincronizando Arquivo Universal...</p>
     </div>
+
     <script type="module">
-        import "./index.tsx";
-        // Remove o loader assim que o script principal carregar (opcional, o React cuidará do conteúdo)
-        setTimeout(() => {
-            const loader = document.getElementById('app-loader');
-            if (loader) loader.style.opacity = '0';
-            setTimeout(() => loader?.remove(), 500);
-        }, 2000);
+        // Importa o app e remove o loader quando o React estiver pronto
+        try {
+            import("./index.tsx").then(() => {
+                // Pequeno delay para garantir que o React montou o primeiro frame
+                setTimeout(() => {
+                    const loader = document.getElementById('app-loader');
+                    if (loader) {
+                        loader.style.opacity = '0';
+                        setTimeout(() => loader.remove(), 500);
+                    }
+                }, 800);
+            }).catch(err => {
+                console.error("Erro ao importar index.tsx:", err);
+                document.getElementById('app-loader').remove();
+            });
+        } catch (e) {
+            console.error("Erro fatal de carregamento:", e);
+            document.getElementById('app-loader').remove();
+        }
     </script>
 </body>
 </html>

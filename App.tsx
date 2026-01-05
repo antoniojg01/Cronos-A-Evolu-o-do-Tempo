@@ -12,26 +12,43 @@ type StatPeriod = 'DAY' | 'MONTH' | 'YEAR';
 const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Inicialização segura do LocalStorage
   const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('cronos_tasks');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('cronos_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Erro ao carregar tarefas:", e);
+      return [];
+    }
   });
   
   const [stats, setStats] = useState<UserStats>(() => {
-    const saved = localStorage.getItem('cronos_stats');
     const defaultStats = { xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] };
-    if (!saved) return defaultStats;
-    const parsed = JSON.parse(saved);
-    return { ...defaultStats, ...parsed };
+    try {
+      const saved = localStorage.getItem('cronos_stats');
+      if (!saved) return defaultStats;
+      const parsed = JSON.parse(saved);
+      return { ...defaultStats, ...parsed };
+    } catch (e) {
+      console.error("Erro ao carregar estatísticas:", e);
+      return defaultStats;
+    }
   });
 
   const [periods, setPeriods] = useState<Period[]>(() => {
-    const saved = localStorage.getItem('cronos_periods');
-    return saved ? JSON.parse(saved) : [
+    const defaultPeriods = [
       { id: 'p1', name: 'Manhã' },
       { id: 'p2', name: 'Tarde' },
       { id: 'p3', name: 'Noite' }
     ];
+    try {
+      const saved = localStorage.getItem('cronos_periods');
+      return saved ? JSON.parse(saved) : defaultPeriods;
+    } catch (e) {
+      console.error("Erro ao carregar períodos:", e);
+      return defaultPeriods;
+    }
   });
 
   const [mainView, setMainView] = useState<MainView>('DASHBOARD');
@@ -41,7 +58,6 @@ const App: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'DAILY' | 'ROUTINE'>('DAILY');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   
-  // States para novos steps
   const [tempSteps, setTempSteps] = useState<string[]>([]);
   const [newStepInput, setNewStepInput] = useState('');
 
@@ -504,7 +520,7 @@ const App: React.FC = () => {
                             {isLoadingNarrative ? (
                                 <span className="animate-pulse">Descriptografando frequências temporais...</span>
                             ) : (
-                                `"${narrative}"` || "Estabeleça protocolos para gerar novos registros históricos."
+                                narrative ? `"${narrative}"` : "Estabeleça protocolos para gerar novos registros históricos."
                             )}
                         </p>
                     </div>
