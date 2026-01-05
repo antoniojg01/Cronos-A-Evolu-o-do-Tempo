@@ -14,3 +14,8 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Remove o loader do HTML assim que o React assume o controle
+if ((window as any).hideAppLoader) {
+  (window as any).hideAppLoader();
+}

@@ -31,11 +31,6 @@
             width: 100%;
         }
         .font-space { font-family: 'Space Grotesk', sans-serif; }
-        .glass {
-            background: rgba(15, 23, 42, 0.4);
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
         
         .loading-screen {
             position: fixed;
@@ -46,7 +41,7 @@
             justify-content: center;
             background: #020617;
             z-index: 9999;
-            transition: opacity 0.5s ease-out;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -59,24 +54,25 @@
         .scrollbar-hide::-webkit-scrollbar { display: none; }
     </style>
     <script>
-        // Inicialização de ambiente segura
-        window.process = { 
-            env: { 
-                API_KEY: "" // Será injetado pelo ambiente
-            } 
-        };
-        
-        // Captura de erros catastróficos para debug
-        window.onerror = function(msg, url, line, col, error) {
-            console.error("Erro Global CRONOS:", msg, "em", url, ":", line);
-            // Se o loader ainda estiver lá, removemos para não travar a tela
+        // Função global para esconder o loader, chamada pelo index.tsx
+        window.hideAppLoader = function() {
             const loader = document.getElementById('app-loader');
             if (loader) {
                 loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 500);
+                setTimeout(() => {
+                    loader.remove();
+                }, 600);
             }
-            return false;
         };
+
+        // Fallback: se o React falhar em carregar em 10 segundos, remove o loader para mostrar erros
+        setTimeout(() => {
+            const loader = document.getElementById('app-loader');
+            if (loader && loader.style.opacity !== '0') {
+                console.warn("Removendo loader via timeout de segurança.");
+                window.hideAppLoader();
+            }
+        }, 10000);
     </script>
 <script type="importmap">
 {
@@ -95,30 +91,8 @@
     <div id="root"></div>
     
     <div class="loading-screen" id="app-loader">
-        <div class="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
-        <p class="font-space text-indigo-400 text-xs tracking-[0.4em] uppercase animate-pulse">Sincronizando Arquivo Universal...</p>
+        <div class="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin mb-6 shadow-[0_0_20px_rgba(99,102,241,0.2)]"></div>
+        <p class="font-space text-indigo-400 text-[10px] tracking-[0.5em] uppercase animate-pulse">Sincronizando Arquivo Universal...</p>
     </div>
-
-    <script type="module">
-        // Importa o app e remove o loader quando o React estiver pronto
-        try {
-            import("./index.tsx").then(() => {
-                // Pequeno delay para garantir que o React montou o primeiro frame
-                setTimeout(() => {
-                    const loader = document.getElementById('app-loader');
-                    if (loader) {
-                        loader.style.opacity = '0';
-                        setTimeout(() => loader.remove(), 500);
-                    }
-                }, 800);
-            }).catch(err => {
-                console.error("Erro ao importar index.tsx:", err);
-                document.getElementById('app-loader').remove();
-            });
-        } catch (e) {
-            console.error("Erro fatal de carregamento:", e);
-            document.getElementById('app-loader').remove();
-        }
-    </script>
 </body>
 </html>
