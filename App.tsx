@@ -52,6 +52,7 @@ const App: React.FC = () => {
   const [showPeriodManager, setShowPeriodManager] = useState(false);
   const [statPeriod, setStatPeriod] = useState<StatPeriod>('DAY');
   const [editingPeriodTaskId, setEditingPeriodTaskId] = useState<string | null>(null);
+  const [editingPriorityTaskId, setEditingPriorityTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if ((window as any).hideAppLoader) (window as any).hideAppLoader();
@@ -156,6 +157,49 @@ const App: React.FC = () => {
     setEditingPeriodTaskId(null);
   };
 
+  const updateTaskPriority = (taskId: string, newPriority: PriorityLevel) => {
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, priority: newPriority } : t));
+    setEditingPriorityTaskId(null);
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (data.tasks) {
+          const sanitizedTasks = data.tasks.map((t: any) => ({
+            ...t,
+            completionMode: t.completionMode || 'TIMER',
+            status: t.status || 'PENDING'
+          }));
+          setTasks(sanitizedTasks);
+        }
+        if (data.stats) {
+          setStats(prev => ({
+            ...prev,
+            ...data.stats,
+            xp: typeof data.stats.xp === 'number' ? data.stats.xp : prev.xp,
+            level: typeof data.stats.level === 'number' ? data.stats.level : prev.level
+          }));
+        }
+        if (data.periods) {
+          setPeriods(data.periods);
+        }
+        setShowBackupModal(false);
+      } catch (err) {
+        console.error("Erro na importação:", err);
+        alert("O arquivo selecionado não é um backup válido do CRONOS.");
+      } finally {
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const aggregatedData = useMemo(() => {
     const logs = stats.timeLogs || [];
     const now = new Date();
@@ -174,6 +218,14 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImportFile} 
+        accept=".json" 
+        className="hidden" 
+      />
+
       <nav className="w-full md:w-20 lg:w-24 bg-slate-900/40 border-b md:border-b-0 md:border-r border-white/5 backdrop-blur-2xl flex md:flex-col items-center justify-between p-3 md:p-4 z-50 flex-shrink-0">
         <div className="flex md:flex-col items-center gap-4 md:gap-8 w-full justify-around md:justify-start">
           <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center font-space font-bold text-white text-xl md:text-2xl shadow-[0_0_25px_rgba(79,70,229,0.4)] md:mb-10">C</div>
@@ -214,13 +266,11 @@ const App: React.FC = () => {
                 {periods.map(p => <button key={p.id} onClick={() => setFilterPeriodId(p.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border ${filterPeriodId === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-900/40 border-white/5 text-slate-500'}`}>{p.name}</button>)}
               </div>
 
-              {/* FORMULÁRIO DE INJEÇÃO */}
               <form onSubmit={addTask} className="mb-16 p-8 md:p-12 bg-slate-900/20 border border-white/5 rounded-[3rem] shadow-inner space-y-8 animate-in slide-in-from-top-4">
                 <div className="flex flex-col sm:flex-row gap-4">
                   <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar objetivo..." : "Estabelecer rotina..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-950/50 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl" />
                   <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-300 transition-all shadow-xl">Fixar Protocolo</button>
                 </div>
-                
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                    <div className="space-y-3">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Importância:</span>
@@ -232,7 +282,6 @@ const App: React.FC = () => {
                          ))}
                       </div>
                    </div>
-
                    <div className="space-y-3">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Modo de Ação:</span>
                       <div className="flex gap-2">
@@ -243,7 +292,6 @@ const App: React.FC = () => {
                          ))}
                       </div>
                    </div>
-
                    <div className="space-y-3">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Alocar em:</span>
                       <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs font-bold text-indigo-300 outline-none focus:border-indigo-500/50">
@@ -251,7 +299,6 @@ const App: React.FC = () => {
                         <option value="" className="bg-slate-900">Sem alocação</option>
                       </select>
                    </div>
-
                    <div className="space-y-3">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Sub-etapas:</span>
                       <input type="text" placeholder="Add passo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs text-white outline-none focus:border-indigo-500/50" />
@@ -259,7 +306,6 @@ const App: React.FC = () => {
                 </div>
               </form>
 
-              {/* LISTA DE TAREFAS */}
               <div className="space-y-20">
                 {[...periods, { id: 'unassigned', name: 'Fluxo Livre' }].filter(p => filterPeriodId === 'all' || filterPeriodId === p.id).map(period => {
                     const pTasks = tasks
@@ -284,12 +330,32 @@ const App: React.FC = () => {
                               
                               <div className="flex items-start justify-between mb-6">
                                 <div className="max-w-[70%]">
-                                  <div className="flex items-center gap-3 mb-2">
-                                    <span className={`text-[8px] font-bold uppercase tracking-widest opacity-60 ${task.priority === 1 ? 'text-red-400' : 'text-indigo-400'}`}>
-                                      {priorityLabels[task.priority || 2]}
-                                    </span>
+                                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                                    {/* SELETOR DE PRIORIDADE (EDIÇÃO) */}
+                                    <div className="relative" onClick={e => e.stopPropagation()}>
+                                      {editingPriorityTaskId === task.id ? (
+                                        <div className="flex gap-1 animate-in zoom-in">
+                                          {[1, 2, 3].map((lvl) => (
+                                            <button
+                                              key={lvl}
+                                              onClick={() => updateTaskPriority(task.id, lvl as PriorityLevel)}
+                                              className={`w-4 h-4 rounded-full border border-white/20 ${lvl === 1 ? 'bg-red-500' : lvl === 2 ? 'bg-indigo-500' : 'bg-slate-500'} hover:scale-110 transition-transform`}
+                                              title={priorityLabels[lvl as PriorityLevel]}
+                                            />
+                                          ))}
+                                          <button onClick={() => setEditingPriorityTaskId(null)} className="ml-1 text-[8px] text-slate-500 uppercase font-bold">cancelar</button>
+                                        </div>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setEditingPriorityTaskId(task.id)}
+                                          className={`text-[8px] font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity flex items-center gap-1.5 ${task.priority === 1 ? 'text-red-400' : task.priority === 2 ? 'text-indigo-400' : 'text-slate-400'}`}
+                                        >
+                                          <span className={`w-1.5 h-1.5 rounded-full ${task.priority === 1 ? 'bg-red-400 shadow-[0_0_5px_rgba(239,68,68,0.5)]' : task.priority === 2 ? 'bg-indigo-400 shadow-[0_0_5px_rgba(99,102,241,0.5)]' : 'bg-slate-400'}`} />
+                                          {priorityLabels[task.priority || 2]}
+                                        </button>
+                                      )}
+                                    </div>
                                     
-                                    {/* SELETOR DE PERÍODO (EDIÇÃO) */}
                                     <div className="relative" onClick={e => e.stopPropagation()}>
                                       {editingPeriodTaskId === task.id ? (
                                         <select 
@@ -322,7 +388,6 @@ const App: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* Ações Rápidas para Modo Manual */}
                               {task.completionMode === 'MANUAL' && task.status === 'PENDING' && (
                                 <div className="flex gap-3 mb-6" onClick={e => e.stopPropagation()}>
                                   <button onClick={() => handleTaskAction('COMPLETED', 0, task)} className="flex-1 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-[10px] font-bold text-emerald-400 uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all">Sim</button>
