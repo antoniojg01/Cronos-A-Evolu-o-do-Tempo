@@ -15,7 +15,20 @@ const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
       const saved = localStorage.getItem('cronos_tasks');
-      return saved ? JSON.parse(saved).map((t: any) => ({ ...t, completionMode: t.completionMode || 'TIMER' })) : [];
+      const loadedTasks: Task[] = saved ? JSON.parse(saved) : [];
+      
+      // Lógica de Renovação de Rotinas ao Carregar
+      const today = new Date().toDateString();
+      return loadedTasks.map(t => {
+        if (t.type === 'ROUTINE' && t.status !== 'PENDING' && t.lastDone) {
+          const lastDate = new Date(t.lastDone).toDateString();
+          // Se o último check-in não foi hoje, reseta para PENDENTE
+          if (lastDate !== today) {
+            return { ...t, status: 'PENDING', steps: t.steps?.map(s => ({ ...s, completed: false })) };
+          }
+        }
+        return { ...t, completionMode: t.completionMode || 'TIMER' };
+      });
     } catch (e) { return []; }
   });
   
@@ -47,15 +60,35 @@ const App: React.FC = () => {
   const [newStepInput, setNewStepInput] = useState('');
   const [selectedPeriodForAdd, setSelectedPeriodForAdd] = useState<string>('');
   const [filterPeriodId, setFilterPeriodId] = useState<string | 'all'>('all');
-  const [newPeriodName, setNewPeriodName] = useState('');
   const [showBackupModal, setShowBackupModal] = useState(false);
-  const [showPeriodManager, setShowPeriodManager] = useState(false);
   const [statPeriod, setStatPeriod] = useState<StatPeriod>('DAY');
   const [editingPeriodTaskId, setEditingPeriodTaskId] = useState<string | null>(null);
   const [editingPriorityTaskId, setEditingPriorityTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if ((window as any).hideAppLoader) (window as any).hideAppLoader();
+  }, []);
+
+  // Monitor de Mudança de Dia (Caso o app fique aberto durante a meia-noite)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const today = new Date().toDateString();
+      setTasks(prev => {
+        let changed = false;
+        const next = prev.map(t => {
+          if (t.type === 'ROUTINE' && t.status !== 'PENDING' && t.lastDone) {
+            const lastDate = new Date(t.lastDone).toDateString();
+            if (lastDate !== today) {
+              changed = true;
+              return { ...t, status: 'PENDING', steps: t.steps?.map(s => ({ ...s, completed: false })) };
+            }
+          }
+          return t;
+        });
+        return changed ? next : prev;
+      });
+    }, 60000); // Checa a cada minuto
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -130,8 +163,14 @@ const App: React.FC = () => {
     if (!targetTask) return;
     const xp = status === 'COMPLETED' ? XP_COMPLETED : status === 'GAVE_UP' ? XP_GAVE_UP : XP_IGNORED;
     updateStats(xp, status, seconds, targetTask);
-    if (targetTask.type === 'DAILY') setTasks(tasks.filter(t => t.id !== targetTask.id));
-    else setTasks(tasks.map(t => t.id === targetTask.id ? { ...t, status, lastDone: Date.now() } : t));
+    
+    if (targetTask.type === 'DAILY') {
+      // Objetivos diários são removidos ao completar
+      setTasks(tasks.filter(t => t.id !== targetTask.id));
+    } else {
+      // Rotinas são marcadas como concluídas hoje, mas permanecem para resetar amanhã
+      setTasks(tasks.map(t => t.id === targetTask.id ? { ...t, status, lastDone: Date.now(), completedAt: Date.now() } : t));
+    }
     if (!taskOverride) setActiveTask(null);
   };
 
@@ -192,7 +231,6 @@ const App: React.FC = () => {
         setShowBackupModal(false);
       } catch (err) {
         console.error("Erro na importação:", err);
-        alert("O arquivo selecionado não é um backup válido do CRONOS.");
       } finally {
         if (e.target) e.target.value = '';
       }
@@ -213,18 +251,13 @@ const App: React.FC = () => {
   }, [stats.timeLogs, statPeriod]);
 
   const currentLevel = LEVELS.find(l => l.level === stats.level) || LEVELS[0];
-  const priorityStyles = { 1: "border-red-500/40 text-red-400", 2: "border-indigo-500/40 text-indigo-400", 3: "border-slate-500/40 text-slate-500" };
+  const priorityStyles = { 1: "border-red-500/30", 2: "border-indigo-500/30", 3: "border-slate-500/30" };
+  const priorityGlow = { 1: "shadow-[0_0_20px_rgba(239,68,68,0.1)]", 2: "shadow-[0_0_20px_rgba(99,102,241,0.1)]", 3: "shadow-none" };
   const priorityLabels = { 1: "Prioridade Crítica", 2: "Protocolo Padrão", 3: "Fluxo Opcional" };
 
   return (
     <div className="h-screen w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden">
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleImportFile} 
-        accept=".json" 
-        className="hidden" 
-      />
+      <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
 
       <nav className="w-full md:w-20 lg:w-24 bg-slate-900/40 border-b md:border-b-0 md:border-r border-white/5 backdrop-blur-2xl flex md:flex-col items-center justify-between p-3 md:p-4 z-50 flex-shrink-0">
         <div className="flex md:flex-col items-center gap-4 md:gap-8 w-full justify-around md:justify-start">
@@ -245,8 +278,21 @@ const App: React.FC = () => {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
               <header className="mb-14 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                 <div>
-                  <h1 className="text-4xl md:text-5xl lg:text-6xl font-space font-bold text-white tracking-tighter uppercase leading-none">Protocolo Ativo</h1>
+                  <h1 className="text-4xl md:text-5xl lg:text-6xl font-space font-bold text-white tracking-tighter uppercase leading-none">Command Center</h1>
                   <p className="text-slate-500 text-sm tracking-widest font-bold uppercase italic mt-3">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                </div>
+                <div className="flex items-center gap-6 bg-slate-900/50 p-6 rounded-[2rem] border border-white/5 backdrop-blur-lg">
+                  <div className="text-right">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Energia Diária</span>
+                    <p className="text-2xl font-space font-bold text-indigo-400">+{tasks.filter(t => t.status === 'COMPLETED').length * 5} XP</p>
+                  </div>
+                  <div className="w-px h-10 bg-white/5" />
+                  <div className="text-right">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Sincronia</span>
+                    <p className="text-2xl font-space font-bold text-emerald-400">
+                      {tasks.filter(t => t.status === 'COMPLETED').length}/{tasks.filter(t => t.type === activeSubTab).length}
+                    </p>
+                  </div>
                 </div>
               </header>
 
@@ -254,157 +300,152 @@ const App: React.FC = () => {
                 <div className="flex gap-2 bg-slate-900/50 p-1.5 rounded-[1.5rem] border border-white/5 w-fit">
                   {['DAILY', 'ROUTINE'].map(t => (
                     <button key={t} onClick={() => { setActiveSubTab(t as any); setFilterPeriodId('all'); }} className={`px-6 md:px-10 py-3 rounded-xl font-bold text-[10px] md:text-xs uppercase tracking-widest transition-all ${activeSubTab === t ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
-                      {t === 'DAILY' ? 'Objetivos' : 'Rotinas'}
+                      {t === 'DAILY' ? 'Objetivos Únicos' : 'Rotinas Diárias'}
                     </button>
                   ))}
                 </div>
-                <button onClick={() => setShowPeriodManager(!showPeriodManager)} className="h-12 px-6 rounded-2xl bg-slate-900/40 border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all">Ciclos Temporais</button>
               </div>
 
-              <div className="flex items-center gap-3 mb-10 overflow-x-auto pb-4 scrollbar-hide">
-                <button onClick={() => setFilterPeriodId('all')} className={`whitespace-nowrap px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border ${filterPeriodId === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-900/40 border-white/5 text-slate-500'}`}>Todos os Fluxos</button>
-                {periods.map(p => <button key={p.id} onClick={() => setFilterPeriodId(p.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border ${filterPeriodId === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-900/40 border-white/5 text-slate-500'}`}>{p.name}</button>)}
-              </div>
-
-              <form onSubmit={addTask} className="mb-16 p-8 md:p-12 bg-slate-900/20 border border-white/5 rounded-[3rem] shadow-inner space-y-8 animate-in slide-in-from-top-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar objetivo..." : "Estabelecer rotina..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-950/50 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl md:text-2xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl" />
-                  <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-300 transition-all shadow-xl">Fixar Protocolo</button>
+              {/* FORMULÁRIO DE INJEÇÃO */}
+              <form onSubmit={addTask} className="mb-20 p-8 md:p-12 bg-slate-900/20 border border-white/5 rounded-[3.5rem] shadow-inner space-y-8 animate-in slide-in-from-top-4">
+                <div className="flex flex-col lg:flex-row gap-4">
+                  <input type="text" placeholder={activeSubTab === 'DAILY' ? "Injetar novo objetivo único..." : "Estabelecer nova rotina diária..."} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 h-16 md:h-20 bg-slate-950/50 border border-white/10 rounded-[2rem] px-8 md:px-10 text-xl text-white focus:outline-none focus:border-indigo-500/50 shadow-2xl transition-all" />
+                  <button type="submit" className="h-16 md:h-20 px-10 md:px-14 bg-white text-slate-950 rounded-[2rem] font-space font-bold uppercase text-xs md:text-sm tracking-widest hover:bg-indigo-300 active:scale-95 transition-all shadow-xl">Confirmar Registro</button>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                    <div className="space-y-3">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Importância:</span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Gravidade:</span>
                       <div className="flex gap-2">
                          {[1, 2, 3].map((p) => (
-                           <button key={p} type="button" onClick={() => setNewTaskPriority(p as PriorityLevel)} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-widest border transition-all ${newTaskPriority === p ? (p === 1 ? 'bg-red-500/20 border-red-500 text-red-400' : p === 2 ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-700/40 border-slate-500 text-slate-400') : 'border-white/5 text-slate-600 hover:border-white/10'}`}>
-                             {p === 1 ? 'Alta' : p === 2 ? 'Média' : 'Baixa'}
-                           </button>
+                           <button key={p} type="button" onClick={() => setNewTaskPriority(p as PriorityLevel)} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-widest border transition-all ${newTaskPriority === p ? (p === 1 ? 'bg-red-500/20 border-red-500 text-red-400' : p === 2 ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-700/40 border-slate-500 text-slate-400') : 'border-white/5 text-slate-600 hover:border-white/10'}`}>{p === 1 ? 'Alta' : p === 2 ? 'Média' : 'Baixa'}</button>
                          ))}
                       </div>
                    </div>
                    <div className="space-y-3">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Modo de Ação:</span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Ação:</span>
                       <div className="flex gap-2">
                          {(['TIMER', 'MANUAL'] as CompletionMode[]).map((m) => (
-                           <button key={m} type="button" onClick={() => setNewTaskMode(m)} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-widest border transition-all ${newTaskMode === m ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'border-white/5 text-slate-600 hover:border-white/10'}`}>
-                             {m === 'TIMER' ? '⏱ Tempo' : '✅ Check-in'}
-                           </button>
+                           <button key={m} type="button" onClick={() => setNewTaskMode(m)} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase tracking-widest border transition-all ${newTaskMode === m ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-white/5 text-slate-600 hover:border-white/10'}`}>{m === 'TIMER' ? '⏱ Tempo' : '✅ Check'}</button>
                          ))}
                       </div>
                    </div>
                    <div className="space-y-3">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Alocar em:</span>
-                      <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs font-bold text-indigo-300 outline-none focus:border-indigo-500/50">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Alocação:</span>
+                      <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-[11px] font-bold text-indigo-300 outline-none focus:border-indigo-500/50">
                         {periods.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>)}
-                        <option value="" className="bg-slate-900">Sem alocação</option>
+                        <option value="" className="bg-slate-900">Fluxo Livre</option>
                       </select>
                    </div>
                    <div className="space-y-3">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block ml-2">Sub-etapas:</span>
-                      <input type="text" placeholder="Add passo..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-xs text-white outline-none focus:border-indigo-500/50" />
+                      <input type="text" placeholder="Add etapa..." value={newStepInput} onChange={e => setNewStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), setTempSteps([...tempSteps, newStepInput]), setNewStepInput(''))} className="w-full h-[52px] bg-slate-950/60 border border-white/10 rounded-2xl px-5 text-[11px] text-white outline-none focus:border-indigo-500/50" />
                    </div>
                 </div>
               </form>
 
-              <div className="space-y-20">
-                {[...periods, { id: 'unassigned', name: 'Fluxo Livre' }].filter(p => filterPeriodId === 'all' || filterPeriodId === p.id).map(period => {
-                    const pTasks = tasks
-                      .filter(t => t.type === activeSubTab && (t.periodId === period.id || (period.id === 'unassigned' && !t.periodId)))
-                      .sort((a, b) => (a.priority || 2) - (b.priority || 2));
+              {/* LISTA DE TAREFAS */}
+              <div className="space-y-24">
+                {[...periods, { id: 'unassigned', name: 'Fluxo Livre' }].map(period => {
+                    const allTasks = tasks.filter(t => t.type === activeSubTab && (t.periodId === period.id || (period.id === 'unassigned' && !t.periodId)));
+                    const pendingTasks = allTasks.filter(t => t.status === 'PENDING').sort((a, b) => (a.priority || 2) - (b.priority || 2));
+                    const completedTasks = allTasks.filter(t => t.status !== 'PENDING');
                     
-                    if (pTasks.length === 0) return null;
+                    if (allTasks.length === 0) return null;
+                    
                     return (
-                      <div key={period.id} className="animate-in fade-in slide-in-from-bottom-6">
-                        <h4 className="text-[11px] font-bold text-indigo-400/60 uppercase tracking-[0.5em] mb-8 ml-8 flex items-center gap-5">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                          {period.name}
-                        </h4>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                          {pTasks.map(task => (
+                      <div key={period.id} className="animate-in fade-in slide-in-from-bottom-10 duration-700">
+                        <div className="flex items-center justify-between mb-10 px-4">
+                           <div className="flex items-center gap-4">
+                              <div className="w-1.5 h-8 bg-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.5)]" />
+                              <h4 className="text-xl md:text-2xl font-space font-bold text-white uppercase tracking-tighter">{period.name}</h4>
+                           </div>
+                           <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-32 h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-indigo-500 transition-all duration-1000" 
+                                    style={{ width: `${(completedTasks.length / allTasks.length) * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] font-bold text-indigo-400">{completedTasks.length}/{allTasks.length}</span>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {pendingTasks.map(task => (
                             <div 
                               key={task.id} 
-                              onClick={() => task.completionMode === 'TIMER' && task.status === 'PENDING' ? setActiveTask(task) : null} 
-                              className={`group relative p-8 md:p-10 bg-slate-900/30 border-2 rounded-[3.5rem] hover:bg-slate-900/50 transition-all cursor-pointer overflow-hidden ${task.status !== 'PENDING' ? 'opacity-40 grayscale border-white/5' : `shadow-2xl ${priorityStyles[task.priority || 2]}`}`}
+                              onClick={() => task.completionMode === 'TIMER' ? setActiveTask(task) : null} 
+                              className={`group relative p-6 md:p-8 bg-slate-900/40 border ${priorityStyles[task.priority || 2]} ${priorityGlow[task.priority || 2]} rounded-[2.5rem] hover:bg-slate-900/60 transition-all cursor-pointer`}
                             >
-                              <div className={`absolute top-0 right-10 h-1 w-20 rounded-b-full ${task.priority === 1 ? 'bg-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : task.priority === 2 ? 'bg-indigo-500/60' : 'bg-slate-700/60'}`} />
-                              
-                              <div className="flex items-start justify-between mb-6">
-                                <div className="max-w-[70%]">
-                                  <div className="flex flex-wrap items-center gap-3 mb-2">
-                                    {/* SELETOR DE PRIORIDADE (EDIÇÃO) */}
-                                    <div className="relative" onClick={e => e.stopPropagation()}>
-                                      {editingPriorityTaskId === task.id ? (
-                                        <div className="flex gap-1 animate-in zoom-in">
-                                          {[1, 2, 3].map((lvl) => (
-                                            <button
-                                              key={lvl}
-                                              onClick={() => updateTaskPriority(task.id, lvl as PriorityLevel)}
-                                              className={`w-4 h-4 rounded-full border border-white/20 ${lvl === 1 ? 'bg-red-500' : lvl === 2 ? 'bg-indigo-500' : 'bg-slate-500'} hover:scale-110 transition-transform`}
-                                              title={priorityLabels[lvl as PriorityLevel]}
-                                            />
-                                          ))}
-                                          <button onClick={() => setEditingPriorityTaskId(null)} className="ml-1 text-[8px] text-slate-500 uppercase font-bold">cancelar</button>
-                                        </div>
-                                      ) : (
-                                        <button 
-                                          onClick={() => setEditingPriorityTaskId(task.id)}
-                                          className={`text-[8px] font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity flex items-center gap-1.5 ${task.priority === 1 ? 'text-red-400' : task.priority === 2 ? 'text-indigo-400' : 'text-slate-400'}`}
-                                        >
-                                          <span className={`w-1.5 h-1.5 rounded-full ${task.priority === 1 ? 'bg-red-400 shadow-[0_0_5px_rgba(239,68,68,0.5)]' : task.priority === 2 ? 'bg-indigo-400 shadow-[0_0_5px_rgba(99,102,241,0.5)]' : 'bg-slate-400'}`} />
-                                          {priorityLabels[task.priority || 2]}
-                                        </button>
-                                      )}
-                                    </div>
-                                    
-                                    <div className="relative" onClick={e => e.stopPropagation()}>
-                                      {editingPeriodTaskId === task.id ? (
-                                        <select 
-                                          autoFocus
-                                          className="bg-slate-950 border border-indigo-500/50 rounded-lg text-[8px] font-bold text-white uppercase px-2 py-0.5 outline-none animate-in zoom-in"
-                                          onBlur={() => setEditingPeriodTaskId(null)}
-                                          onChange={(e) => updateTaskPeriod(task.id, e.target.value)}
-                                          value={task.periodId || 'unassigned'}
-                                        >
-                                          {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                          <option value="unassigned">Fluxo Livre</option>
-                                        </select>
-                                      ) : (
-                                        <button 
-                                          onClick={() => setEditingPeriodTaskId(task.id)}
-                                          className="px-2 py-0.5 rounded-lg border border-white/10 hover:border-indigo-500/40 text-[8px] font-bold text-slate-500 hover:text-indigo-300 uppercase tracking-widest transition-all"
-                                        >
-                                          {periods.find(p => p.id === task.periodId)?.name || 'Fluxo Livre'}
-                                        </button>
-                                      )}
-                                    </div>
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                                    <button onClick={(e) => { e.stopPropagation(); setEditingPriorityTaskId(task.id); }} className={`px-2 py-0.5 rounded-lg border border-white/10 text-[7px] font-bold uppercase tracking-widest ${task.priority === 1 ? 'text-red-400 border-red-500/30' : 'text-slate-500'}`}>
+                                      {priorityLabels[task.priority || 2]}
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); setEditingPeriodTaskId(task.id); }} className="px-2 py-0.5 rounded-lg border border-white/10 text-[7px] font-bold text-slate-500 hover:text-indigo-300 uppercase tracking-widest transition-all">
+                                      {periods.find(p => p.id === task.periodId)?.name || 'Fluxo Livre'}
+                                    </button>
                                   </div>
-                                  
-                                  <h3 className={`text-2xl md:text-3xl font-space font-bold tracking-tight leading-tight ${task.status !== 'PENDING' ? 'line-through text-slate-500' : 'text-white'}`}>
-                                    {task.title}
-                                  </h3>
+                                  <h3 className="text-xl md:text-2xl font-space font-bold text-white leading-tight group-hover:text-indigo-300 transition-colors">{task.title}</h3>
                                 </div>
-                                <div className="flex gap-2">
-                                  <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="text-slate-800 hover:text-red-500 transition-colors p-2 text-xl">&times;</button>
-                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); setTasks(tasks.filter(t => t.id !== task.id)); }} className="w-10 h-10 flex items-center justify-center text-slate-700 hover:text-red-500 text-2xl transition-all">&times;</button>
                               </div>
 
-                              {task.completionMode === 'MANUAL' && task.status === 'PENDING' && (
-                                <div className="flex gap-3 mb-6" onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => handleTaskAction('COMPLETED', 0, task)} className="flex-1 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-[10px] font-bold text-emerald-400 uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all">Sim</button>
-                                  <button onClick={() => handleTaskAction('IGNORED', 0, task)} className="flex-1 py-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-[10px] font-bold text-red-400 uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">Não</button>
+                              {task.completionMode === 'MANUAL' && (
+                                <div className="flex gap-2 mb-4" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => handleTaskAction('COMPLETED', 0, task)} className="flex-1 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-[9px] font-bold text-emerald-400 uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all">Sincronizar</button>
+                                  <button onClick={() => handleTaskAction('IGNORED', 0, task)} className="flex-1 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-[9px] font-bold text-red-400 uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">Ignorar</button>
                                 </div>
                               )}
 
                               {task.steps && task.steps.length > 0 && (
-                                <div className="grid grid-cols-2 gap-3 mt-4" onClick={e => e.stopPropagation()}>
+                                <div className="flex flex-wrap gap-2 mt-2" onClick={e => e.stopPropagation()}>
                                   {task.steps.map(s => (
-                                    <div key={s.id} onClick={() => toggleStep(task.id, s.id)} className={`px-4 py-2.5 rounded-2xl border transition-all flex items-center gap-3 ${s.completed ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200' : 'bg-slate-950/40 border-white/5 text-slate-600'}`}>
-                                      <div className={`w-2.5 h-2.5 rounded-full ${s.completed ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.6)]' : 'bg-slate-800'}`} />
-                                      <span className="text-[9px] font-bold truncate uppercase">{s.title}</span>
+                                    <div key={s.id} onClick={() => toggleStep(task.id, s.id)} className={`px-3 py-1.5 rounded-xl border transition-all flex items-center gap-2 ${s.completed ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-100' : 'bg-slate-950/40 border-white/5 text-slate-600'}`}>
+                                      <div className={`w-1.5 h-1.5 rounded-full ${s.completed ? 'bg-indigo-400' : 'bg-slate-800'}`} />
+                                      <span className="text-[8px] font-bold uppercase">{s.title}</span>
                                     </div>
                                   ))}
                                 </div>
                               )}
+
+                              {editingPriorityTaskId === task.id && (
+                                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-sm rounded-[2.5rem] flex items-center justify-center gap-4 animate-in zoom-in" onClick={e => e.stopPropagation()}>
+                                  {[1, 2, 3].map(lvl => (
+                                    <button key={lvl} onClick={() => updateTaskPriority(task.id, lvl as PriorityLevel)} className={`px-4 py-2 rounded-xl text-[9px] font-bold uppercase border ${lvl === 1 ? 'border-red-500 text-red-400' : lvl === 2 ? 'border-indigo-500 text-indigo-400' : 'border-slate-500 text-slate-400'}`}>{priorityLabels[lvl as PriorityLevel]}</button>
+                                  ))}
+                                  <button onClick={() => setEditingPriorityTaskId(null)} className="absolute top-4 right-4 text-slate-500">&times;</button>
+                                </div>
+                              )}
+
+                              {editingPeriodTaskId === task.id && (
+                                <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-sm rounded-[2.5rem] flex flex-col items-center justify-center p-6 animate-in zoom-in" onClick={e => e.stopPropagation()}>
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-4">Relocar para:</span>
+                                  <div className="flex flex-wrap justify-center gap-2">
+                                    {[...periods, { id: 'unassigned', name: 'Livre' }].map(p => (
+                                      <button key={p.id} onClick={() => updateTaskPeriod(task.id, p.id)} className="px-4 py-2 bg-slate-900 border border-white/10 rounded-xl text-[9px] font-bold text-white uppercase tracking-widest hover:border-indigo-500 transition-all">{p.name}</button>
+                                    ))}
+                                  </div>
+                                  <button onClick={() => setEditingPeriodTaskId(null)} className="mt-4 text-[8px] font-bold text-indigo-400 uppercase tracking-widest">Fechar</button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          {completedTasks.map(task => (
+                            <div key={task.id} className="p-5 bg-slate-900/10 border border-white/5 rounded-[2rem] opacity-30 grayscale hover:grayscale-0 hover:opacity-60 transition-all group flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="w-8 h-8 rounded-full border border-emerald-500/50 flex items-center justify-center text-emerald-500">✓</div>
+                                <div>
+                                  <h3 className="text-sm font-space font-bold text-white line-through opacity-50">{task.title}</h3>
+                                  <span className="text-[7px] font-bold uppercase tracking-widest text-slate-500 italic">Ciclo Atuado em {new Date(task.completedAt || task.lastDone || Date.now()).toLocaleTimeString()}</span>
+                                </div>
+                              </div>
+                              <button onClick={() => setTasks(tasks.filter(t => t.id !== task.id))} className="text-slate-800 hover:text-red-500 transition-colors p-2">&times;</button>
                             </div>
                           ))}
                         </div>
@@ -422,7 +463,7 @@ const App: React.FC = () => {
                 <h1 className="text-6xl md:text-8xl font-space font-bold text-white tracking-tighter italic leading-none">A GRANDE EVOLUÇÃO</h1>
               </header>
               <div className="w-full max-w-4xl h-[400px] relative mb-10"><UniverseVisual level={stats.level || 1} /></div>
-              <div className="bg-slate-900/40 border border-white/5 rounded-[4rem] p-10 max-w-2xl">
+              <div className="bg-slate-900/40 border border-white/5 rounded-[4rem] p-10 max-w-2xl backdrop-blur-xl">
                 <h2 className="text-3xl font-space font-bold text-white mb-2">{currentLevel.name}</h2>
                 <p className="text-indigo-400 text-[10px] font-bold tracking-[0.4em] uppercase mb-6">{currentLevel.storyEra}</p>
                 <p className="text-xl font-light text-slate-200 italic leading-relaxed">{isLoadingNarrative ? "Sincronizando..." : narrative}</p>
@@ -440,16 +481,16 @@ const App: React.FC = () => {
                 </div>
               </header>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl">
+                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl backdrop-blur-md">
                   <span className="text-[10px] font-bold text-indigo-400 uppercase mb-4 block">Foco Total</span>
                   <span className="text-5xl font-space font-bold text-white">{(aggregatedData.totalSeconds / 60).toFixed(0)}m</span>
                 </div>
-                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl">
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase mb-4 block">Eventos Concluídos</span>
+                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl backdrop-blur-md">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase mb-4 block">Sincronias</span>
                   <span className="text-5xl font-space font-bold text-white">{stats.completedCount || 0}</span>
                 </div>
-                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl">
-                  <span className="text-[10px] font-bold text-pink-400 uppercase mb-4 block">Energia Vital (XP)</span>
+                <div className="bg-slate-900/30 border border-white/5 p-10 rounded-[3rem] text-center shadow-2xl backdrop-blur-md">
+                  <span className="text-[10px] font-bold text-pink-400 uppercase mb-4 block">Energia Acumulada</span>
                   <span className="text-5xl font-space font-bold text-white">{stats.xp || 0}</span>
                 </div>
               </div>
@@ -468,7 +509,7 @@ const App: React.FC = () => {
                 const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a'); a.href = url; a.download = `cronos_archive.json`; a.click();
-              }} className="w-full py-6 bg-slate-950 border border-white/5 rounded-3xl text-indigo-400 font-bold uppercase text-xs">Exportar Arquivo</button>
+              }} className="w-full py-6 bg-slate-950 border border-white/5 rounded-3xl text-indigo-400 font-bold uppercase text-xs">Exportar Registro</button>
               <button onClick={() => fileInputRef.current?.click()} className="w-full py-6 bg-slate-950 border border-white/5 rounded-3xl text-emerald-400 font-bold uppercase text-xs">Sincronizar Arquivo</button>
               <button onClick={() => setShowBackupModal(false)} className="w-full py-4 text-slate-600 font-bold uppercase text-[10px]">Fechar Terminal</button>
             </div>
