@@ -24,7 +24,43 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   const [isFinished, setIsFinished] = useState(false);
 
   const hasStartedRef = useRef(false);
-  const lastSyncMode = useRef<string>('');
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Função para tocar o alarme sonoro via Web Audio API
+  const playAlarmSound = () => {
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      
+      const playBeep = (freq: number, startTime: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+        
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.2, startTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+
+      // Sequência de bips para o alarme
+      const now = ctx.currentTime;
+      playBeep(880, now, 0.3);
+      playBeep(440, now + 0.4, 0.3);
+      playBeep(880, now + 0.8, 0.5);
+    } catch (e) {
+      console.warn("Áudio não pôde ser reproduzido:", e);
+    }
+  };
 
   // Sincroniza o mostrador central com as configurações atuais
   useEffect(() => {
@@ -49,6 +85,7 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
         } else {
           setTimeLeft(p => {
             if (p <= 1) {
+              playAlarmSound(); // Dispara o som ao zerar
               if (mode === 'POMODORO') {
                 const nextIsBreak = !isBreak;
                 setIsBreak(nextIsBreak);
@@ -73,6 +110,10 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
   }, [isActive, mode, isBreak, workDuration, breakDuration]);
 
   const toggleTimer = () => {
+    // Resume o AudioContext caso esteja suspenso (política do navegador)
+    if (audioCtxRef.current?.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
     setIsActive(!isActive);
     setIsFinished(false);
   };
@@ -126,7 +167,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
     <div className="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl flex items-center justify-center z-[100] p-4 animate-in fade-in duration-500">
       <div className={`bg-[#0a0f1e] border-2 border-white/10 ${isBreak ? 'border-emerald-500/40' : 'border-purple-500/40'} rounded-[4rem] w-full max-w-[550px] overflow-hidden shadow-[0_0_120px_rgba(0,0,0,1)] flex flex-col max-h-[95vh]`}>
         
-        {/* Header com Botão de Minimizar Restaurado */}
         <div className="px-12 pt-12 pb-6 flex justify-between items-start flex-shrink-0">
           <div className="space-y-1">
             <span className="text-[11px] uppercase tracking-[0.6em] text-indigo-400 font-bold block opacity-70">Sincronizador Universal</span>
@@ -152,7 +192,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
         </div>
 
         <div className="flex-1 overflow-y-auto px-10 pb-12 custom-scrollbar">
-          {/* Seletores de Modo */}
           <div className="flex justify-center gap-3 mb-10">
             {(['POMODORO', 'TIMER', 'STOPWATCH'] as TimerMode[]).map((m) => (
               <button 
@@ -165,7 +204,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             ))}
           </div>
 
-          {/* Visualizador Circular */}
           <div className="relative flex items-center justify-center mb-12 mx-auto w-[280px] h-[280px] md:w-[320px] md:h-[320px] bg-slate-900/30 border border-white/5 rounded-[4rem] shadow-[inset_0_0_40px_rgba(0,0,0,0.5)]">
             <svg className="w-full h-full -rotate-90 block" viewBox="0 0 320 320">
               <circle cx="160" cy="160" r={radius} stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-900" />
@@ -173,7 +211,7 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
                 cx="160" cy="160" r={radius} 
                 stroke="currentColor" strokeWidth="10" 
                 fill="transparent" 
-                className={`${isBreak ? 'text-emerald-500' : 'text-purple-500'} transition-all duration-1000 ease-linear`} 
+                className={`${isBreak ? 'text-emerald-500' : 'text-purple-500'} transition-all duration-1000 ease-linear ${isFinished ? 'animate-pulse' : ''}`} 
                 strokeDasharray={circumference} 
                 strokeDashoffset={circumference - (circumference * getProgress())} 
                 strokeLinecap="round" 
@@ -187,7 +225,6 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
             </div>
           </div>
 
-          {/* CONTROLES DE PERSONALIZAÇÃO (Restaurados e Aprimorados) */}
           {!isActive && !isFinished && (
             <div className="grid grid-cols-1 gap-4 mb-10 animate-in fade-in slide-in-from-top-4">
               <div className="bg-slate-950/50 border border-white/5 rounded-3xl p-6 space-y-4">
@@ -224,17 +261,10 @@ const TimerModal: React.FC<TimerModalProps> = ({ task, onClose, onComplete }) =>
                     </div>
                   </div>
                 )}
-
-                {mode === 'STOPWATCH' && (
-                  <div className="py-4 text-center">
-                    <p className="text-[10px] text-slate-600 font-bold uppercase italic tracking-widest">Sincronia Fluida: O tempo será contabilizado conforme a ação</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* Botões de Ação Principal */}
           <div className="grid grid-cols-2 gap-5 mb-12">
             <button 
               onClick={toggleTimer} 
