@@ -20,6 +20,8 @@ export interface Task {
   type: TaskType;
   priority: PriorityLevel;
   completionMode: CompletionMode;
+  requiresInput: boolean;
+  currentInput?: string;
   periodId?: string;
   completedAt?: number;
   lastDone?: number;
