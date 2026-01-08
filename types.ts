@@ -2,6 +2,7 @@
 export type TaskType = 'DAILY' | 'ROUTINE';
 export type PriorityLevel = 1 | 2 | 3; // 1: Alta, 2: Média, 3: Baixa
 export type CompletionMode = 'TIMER' | 'MANUAL';
+export type TaskCategory = 'WORK' | 'LEISURE';
 
 export interface Period {
   id: string;
@@ -18,6 +19,7 @@ export interface Task {
   id: string;
   title: string;
   type: TaskType;
+  category?: TaskCategory;
   priority: PriorityLevel;
   completionMode: CompletionMode;
   requiresInput: boolean;

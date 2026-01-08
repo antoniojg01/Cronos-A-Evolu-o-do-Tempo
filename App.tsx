@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode } from './types.ts';
+import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode, TaskCategory } from './types.ts';
 import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED, XP_STEP } from './constants.ts';
 import { getLevelNarrative } from './services/geminiService.ts';
 import TimerModal from './components/TimerModal.tsx';
@@ -35,7 +35,8 @@ const App: React.FC = () => {
             status: 'PENDING', 
             currentInput: '', 
             lastDone: undefined,
-            completedAt: undefined
+            completedAt: undefined,
+            steps: t.steps?.map(s => ({ ...s, completed: false })) || []
           };
         }
         return t;
@@ -61,9 +62,14 @@ const App: React.FC = () => {
   const [isLoadingNarrative, setIsLoadingNarrative] = useState(false);
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
   const [activeSubTab, setActiveSubTab] = useState<'DAILY' | 'ROUTINE'>('DAILY');
+  
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<PriorityLevel>(2);
+  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('WORK');
   const [newTaskRequiresInput, setNewTaskRequiresInput] = useState(false);
+  const [newTaskStepInput, setNewTaskStepInput] = useState('');
+  const [newTaskSteps, setNewTaskSteps] = useState<string[]>([]);
+
   const [selectedPeriodForAdd, setSelectedPeriodForAdd] = useState('p1');
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
 
@@ -77,7 +83,14 @@ const App: React.FC = () => {
       if (lastCheck && lastCheck !== today) {
         setTasks(prev => prev.map(t => {
           if (t.type === 'ROUTINE' && t.status !== 'PENDING') {
-            return { ...t, status: 'PENDING', lastDone: undefined, completedAt: undefined, currentInput: '' };
+            return { 
+              ...t, 
+              status: 'PENDING', 
+              lastDone: undefined, 
+              completedAt: undefined, 
+              currentInput: '',
+              steps: t.steps?.map(s => ({ ...s, completed: false })) || []
+            };
           }
           return t;
         }));
@@ -137,10 +150,12 @@ const App: React.FC = () => {
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
+    
     const newTask: Task = { 
       id: crypto.randomUUID(), 
       title: newTaskTitle, 
       type: activeSubTab, 
+      category: newTaskCategory,
       priority: newTaskPriority,
       completionMode: 'TIMER',
       requiresInput: newTaskRequiresInput,
@@ -148,14 +163,26 @@ const App: React.FC = () => {
       status: 'PENDING', 
       createdAt: Date.now(),
       periodId: selectedPeriodForAdd,
-      steps: []
+      steps: newTaskSteps.map(s => ({ id: crypto.randomUUID(), title: s, completed: false }))
     };
+    
     setTasks(prev => [...prev, newTask]);
     setNewTaskTitle('');
+    setNewTaskSteps([]);
+  };
+
+  const addStepToNewTask = () => {
+    if (!newTaskStepInput.trim()) return;
+    setNewTaskSteps(prev => [...prev, newTaskStepInput.trim()]);
+    setNewTaskStepInput('');
+  };
+
+  const removeStepFromNewTask = (index: number) => {
+    setNewTaskSteps(prev => prev.filter((_, i) => i !== index));
   };
 
   const resetAllRoutines = () => {
-    if(!confirm("Reiniciar todas as rotinas para hoje? (As concluídas voltarão a ficar pendentes)")) return;
+    if(!confirm("Reiniciar todas as rotinas para hoje?")) return;
     setTasks(prev => prev.map(t => 
       t.type === 'ROUTINE' 
         ? { 
@@ -163,27 +190,68 @@ const App: React.FC = () => {
             status: 'PENDING', 
             currentInput: '', 
             lastDone: undefined, 
-            completedAt: undefined 
+            completedAt: undefined,
+            steps: t.steps?.map(s => ({ ...s, completed: false })) || []
           } 
         : t
     ));
-  };
-
-  const resetAllStats = () => {
-    if(!confirm("Deseja apagar TODO o seu progresso? Isso não pode ser desfeito.")) return;
-    setStats({ xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] });
-    setTasks([]);
   };
 
   const updateTask = (id: string, updates: Partial<Task>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
   };
 
-  const handleTaskAction = (status: 'COMPLETED' | 'GAVE_UP' | 'IGNORED', seconds: number, taskOverride: Task) => {
-    const xp = status === 'COMPLETED' ? XP_COMPLETED : status === 'GAVE_UP' ? XP_GAVE_UP : XP_IGNORED;
+  const toggleStep = (taskId: string, stepId: string) => {
+    setTasks(prev => prev.map(task => {
+      if (task.id === taskId) {
+        const newSteps = task.steps?.map(step => {
+          if (step.id === stepId) {
+            const newStatus = !step.completed;
+            if (newStatus) updateStats(XP_STEP, 'STEP_COMPLETED', 0, task);
+            else updateStats(-XP_STEP, 'STEP_UNCHECKED', 0, task);
+            return { ...step, completed: newStatus };
+          }
+          return step;
+        });
+        return { ...task, steps: newSteps };
+      }
+      return task;
+    }));
+  };
+
+  const addStepToExistingTask = (taskId: string, title: string) => {
+    if (!title.trim()) return;
+    setTasks(prev => prev.map(task => {
+      if (task.id === taskId) {
+        return { 
+          ...task, 
+          steps: [...(task.steps || []), { id: crypto.randomUUID(), title: title.trim(), completed: false }] 
+        };
+      }
+      return task;
+    }));
+  };
+
+  const handleTaskAction = (status: 'COMPLETED' | 'CYCLE_FINISHED' | 'GAVE_UP' | 'IGNORED', seconds: number, taskOverride: Task) => {
+    // Se for apenas conclusão de ciclo, não damos o XP completo de tarefa e não mudamos o status para concluído
+    const xp = status === 'COMPLETED' ? XP_COMPLETED : (status === 'GAVE_UP' ? XP_GAVE_UP : (status === 'IGNORED' ? XP_IGNORED : 0));
+    
     updateStats(xp, status, seconds, taskOverride);
-    setTasks(prev => prev.map(t => t.id === taskOverride.id ? { ...t, status, lastDone: Date.now(), completedAt: Date.now() } : t));
+    
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskOverride.id) {
+        return { 
+          ...t, 
+          status: status === 'COMPLETED' ? 'COMPLETED' : t.status,
+          lastDone: Date.now(), 
+          completedAt: status === 'COMPLETED' ? Date.now() : t.completedAt 
+        };
+      }
+      return t;
+    }));
+
     setActiveTaskIds(prev => prev.filter(id => id !== taskOverride.id));
+    
     if (status === 'COMPLETED') {
       setExpandedTasks(prev => {
         const newState = { ...prev };
@@ -201,7 +269,13 @@ const App: React.FC = () => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     updateStats(-XP_COMPLETED, 'RESTORED', 0, task);
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'PENDING', lastDone: undefined, completedAt: undefined } : t));
+    setTasks(prev => prev.map(t => t.id === taskId ? { 
+      ...t, 
+      status: 'PENDING', 
+      lastDone: undefined, 
+      completedAt: undefined,
+      steps: t.steps?.map(s => ({ ...s, completed: false })) || []
+    } : t));
   };
 
   const formatSeconds = (totalSeconds: number) => {
@@ -226,10 +300,8 @@ const App: React.FC = () => {
           <button onClick={() => setMainView('STATISTICS')} className={`p-3 rounded-2xl transition-all ${mainView === 'STATISTICS' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600 hover:text-slate-400'}`} title="Estatísticas"><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg></button>
       </nav>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto px-5 py-8 md:px-16 lg:px-24 custom-scrollbar px-safe pb-safe">
         
-        {/* DASHBOARD VIEW */}
         {mainView === 'DASHBOARD' && (
           <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in duration-500">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/5 pb-8">
@@ -251,12 +323,39 @@ const App: React.FC = () => {
               ))}
             </div>
 
-            <form onSubmit={addTask} className="space-y-4 bg-white/[0.01] p-6 rounded-3xl border border-white/5">
+            <form onSubmit={addTask} className="space-y-6 bg-white/[0.01] p-6 rounded-3xl border border-white/5">
               <div className="relative group">
-                <input type="text" placeholder={`Injetar novo ${activeSubTab === 'DAILY' ? 'objetivo' : 'protocolo de rotina'}...`} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full h-14 md:h-16 bg-transparent border-b border-white/10 text-lg md:text-2xl text-white outline-none focus:border-indigo-500 transition-all placeholder:text-slate-800 font-space" />
+                <input type="text" placeholder={`Injetar novo ${activeSubTab === 'DAILY' ? 'objetivo' : 'protocolo'}...`} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full h-14 md:h-16 bg-transparent border-b border-white/10 text-lg md:text-2xl text-white outline-none focus:border-indigo-500 transition-all placeholder:text-slate-800 font-space" />
                 <button type="submit" className="absolute right-0 bottom-4 text-slate-700 hover:text-indigo-400 text-[10px] font-bold tracking-widest uppercase transition-colors">ADD +</button>
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-[8px] md:text-[9px] font-bold tracking-widest uppercase text-slate-600">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Passos do Protocolo</span>
+                  <div className="flex gap-2">
+                      <input type="text" placeholder="Adicionar passo..." value={newTaskStepInput} onChange={e => setNewTaskStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addStepToNewTask())} className="flex-1 bg-white/5 rounded-xl px-4 py-2 text-xs outline-none focus:ring-1 ring-indigo-500 border border-white/5" />
+                      <button type="button" onClick={addStepToNewTask} className="px-4 bg-indigo-500/10 text-indigo-400 rounded-xl text-[10px] font-bold uppercase">+</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                      {newTaskSteps.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
+                          <span className="text-[9px] text-slate-300">{s}</span>
+                          <button type="button" onClick={() => removeStepFromNewTask(i)} className="text-red-500/50 hover:text-red-500 text-xs">&times;</button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Categoria de Foco</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setNewTaskCategory('WORK')} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'WORK' ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-500/10' : 'bg-white/5 border-white/5 text-slate-600 hover:text-slate-400'}`}>💼 Trabalho</button>
+                    <button type="button" onClick={() => setNewTaskCategory('LEISURE')} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'LEISURE' ? 'bg-amber-500/10 border-amber-500 text-amber-500 shadow-lg shadow-amber-500/10' : 'bg-white/5 border-white/5 text-slate-600 hover:text-slate-400'}`}>🎮 Lazer</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-[8px] md:text-[9px] font-bold tracking-widest uppercase text-slate-600 border-t border-white/5 pt-4">
                 <div className="flex gap-2">
                   {[1, 2, 3].map(p => (
                     <button key={p} type="button" onClick={() => setNewTaskPriority(p as any)} className={`transition-colors ${newTaskPriority === p ? priorityText[p as PriorityLevel] : 'hover:text-slate-400'}`}>{priorityLabels[p as PriorityLevel]}</button>
@@ -291,23 +390,60 @@ const App: React.FC = () => {
                           <div className="flex flex-row items-center gap-4 py-4 px-4 md:px-6">
                             <div className={`w-1 h-6 rounded-full flex-shrink-0 ${priorityColors[task.priority || 2]}`} />
                             <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedTasks(p => ({...p, [task.id]: !p[task.id]}))}>
-                              <h3 className="text-base md:text-lg font-space font-medium text-slate-300 group-hover:text-white transition-colors truncate">{task.title}</h3>
-                              <div className="flex items-center gap-3 mt-1">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <h3 className="text-base md:text-lg font-space font-medium text-slate-300 group-hover:text-white transition-colors truncate">{task.title}</h3>
+                                {task.category === 'LEISURE' ? (
+                                  <span className="text-[7px] font-bold text-amber-500/70 border border-amber-500/20 px-1.5 rounded-sm uppercase tracking-tighter">Lazer</span>
+                                ) : (
+                                  <span className="text-[7px] font-bold text-indigo-400/70 border border-indigo-400/20 px-1.5 rounded-sm uppercase tracking-tighter">Trabalho</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3">
                                 <span className={`text-[7px] md:text-[8px] font-bold uppercase tracking-widest ${priorityText[task.priority || 2]}`}>{priorityLabels[task.priority || 2]}</span>
+                                {task.steps && task.steps.length > 0 && (
+                                  <span className="text-[7px] text-slate-500 uppercase tracking-widest border border-white/5 px-1.5 rounded-sm">
+                                    {task.steps.filter(s => s.completed).length}/{task.steps.length} Etapas
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
-                              <button onClick={() => toggleTaskTimer(task.id)} className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center hover:bg-indigo-500 hover:text-white transition-all shadow-sm active:scale-95">
+                              <button onClick={() => toggleTaskTimer(task.id)} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-95 ${task.category === 'LEISURE' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white' : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white'}`}>
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                               </button>
-                              <button onClick={() => handleTaskAction('COMPLETED', 0, task)} className="w-7 h-7 rounded-full border border-white/5 flex items-center justify-center text-slate-600 hover:text-emerald-400 transition-colors">✓</button>
+                              <div className="flex flex-col gap-1">
+                                <button onClick={() => handleTaskAction('CYCLE_FINISHED', 0, task)} title="Concluir Ciclo" className="w-7 h-7 rounded-lg border border-white/5 flex items-center justify-center text-slate-600 hover:text-indigo-400 transition-colors">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                </button>
+                                <button onClick={() => handleTaskAction('COMPLETED', 0, task)} title="Finalizar Totalmente" className="w-7 h-7 rounded-lg border border-white/5 flex items-center justify-center text-slate-600 hover:text-emerald-400 transition-colors">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7m-14 4l4 4L19 7" /></svg>
+                                </button>
+                              </div>
                             </div>
                           </div>
 
                           {expandedTasks[task.id] && (
-                            <div className="px-6 md:px-16 pb-8 space-y-6 animate-in slide-in-from-top-1 duration-300">
+                            <div className="px-6 md:px-16 pb-8 space-y-8 animate-in slide-in-from-top-1 duration-300">
+                              <div className="space-y-4">
+                                 <span className="text-[9px] font-bold text-slate-600 uppercase tracking-[0.3em] block">Protocolo Detalhado</span>
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {task.steps?.map(step => (
+                                      <div key={step.id} className="flex items-center gap-3 bg-white/[0.01] border border-white/5 p-3 rounded-xl hover:border-indigo-500/30 transition-all">
+                                         <button onClick={() => toggleStep(task.id, step.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${step.completed ? 'bg-indigo-500 border-indigo-400' : 'border-white/10 hover:border-indigo-400'}`}>
+                                            {step.completed && <span className="text-[10px]">✓</span>}
+                                         </button>
+                                         <span className={`text-xs flex-1 ${step.completed ? 'text-slate-600 line-through' : 'text-slate-300'}`}>{step.title}</span>
+                                         <button onClick={() => updateTask(task.id, { steps: task.steps?.filter(s => s.id !== step.id) })} className="text-red-500/30 hover:text-red-500 transition-colors">&times;</button>
+                                      </div>
+                                    ))}
+                                    <div className="flex items-center gap-2 p-1 bg-white/[0.02] rounded-xl border border-dashed border-white/10">
+                                       <input type="text" placeholder="Novo passo..." onKeyDown={e => e.key === 'Enter' && (addStepToExistingTask(task.id, e.currentTarget.value), e.currentTarget.value = '')} className="flex-1 bg-transparent px-3 py-1 text-xs outline-none" />
+                                    </div>
+                                 </div>
+                              </div>
+
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.01] p-6 rounded-2xl border border-white/5">
-                                <div className="space-y-2">
+                                <div className="space-y-4">
                                   <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest block">Sincronia Temporal</span>
                                   <div className="flex flex-wrap gap-1.5">
                                     {PERIODS.map(p => (
@@ -315,9 +451,12 @@ const App: React.FC = () => {
                                     ))}
                                   </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest block">Gerenciar Protocolo</span>
-                                  <button onClick={() => { if(confirm("Apagar permanentemente?")) setTasks(prev => prev.filter(t => t.id !== task.id)) }} className="w-full py-1.5 rounded-lg text-[8px] font-bold border border-red-500/20 text-red-500/50 hover:text-red-500 transition-all uppercase tracking-widest">Excluir Registro</button>
+                                <div className="space-y-4">
+                                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest block">Ações do Sistema</span>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => updateTask(task.id, { category: task.category === 'WORK' ? 'LEISURE' : 'WORK' })} className="flex-1 py-1.5 rounded-lg text-[8px] font-bold border border-white/5 text-slate-400 hover:text-white transition-all uppercase tracking-widest">Alternar Tipo</button>
+                                    <button onClick={() => { if(confirm("Apagar permanentemente?")) setTasks(prev => prev.filter(t => t.id !== task.id)) }} className="flex-1 py-1.5 rounded-lg text-[8px] font-bold border border-red-500/20 text-red-500/50 hover:text-red-500 transition-all uppercase tracking-widest">Excluir</button>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -342,18 +481,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* EVOLUTION VIEW */}
-        {mainView === 'EVOLUTION' && (
-          <div className="h-full flex flex-col items-center justify-center pb-20 animate-in fade-in duration-1000">
-            <div className="w-full max-w-5xl h-[300px] md:h-[500px]"><UniverseVisual level={stats.level} /></div>
-            <div className="mt-10 max-w-xl text-center space-y-3 px-4">
-               <h2 className="text-2xl md:text-3xl font-space font-bold text-white uppercase tracking-widest">{currentLevel.name}</h2>
-               <p className="text-xs md:text-sm text-slate-400 italic font-light leading-relaxed">{isLoadingNarrative ? 'Conectando ao Oráculo...' : narrative}</p>
-            </div>
-          </div>
-        )}
-
-        {/* STATISTICS VIEW */}
+        {/* STATISTICS and EVOLUTION sections are mostly unchanged but kept for context */}
         {mainView === 'STATISTICS' && (
           <div className="max-w-4xl mx-auto space-y-12 animate-in slide-in-from-bottom-5 duration-700">
             <header className="border-b border-white/5 pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -361,10 +489,9 @@ const App: React.FC = () => {
                 <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase">Relatório Galáctico</h1>
                 <p className="text-[9px] tracking-[0.4em] text-slate-500 font-bold uppercase mt-1 italic">Métricas de Sincronização do Guardião</p>
               </div>
-              <button onClick={resetAllStats} className="text-[8px] font-bold text-red-500/50 hover:text-red-500 border border-red-500/20 px-4 py-2 rounded-xl uppercase tracking-[0.3em] transition-all bg-red-500/5">Resetar Todo Progresso</button>
+              <button onClick={() => { if(confirm("Deseja apagar TODO o seu progresso?")) { setStats({ xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] }); setTasks([]); } }} className="text-[8px] font-bold text-red-500/50 hover:text-red-500 border border-red-500/20 px-4 py-2 rounded-xl uppercase tracking-[0.3em] transition-all bg-red-500/5">Resetar Todo Progresso</button>
             </header>
 
-            {/* Progresso de Nível */}
             <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] p-8 md:p-10 space-y-6">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
@@ -376,7 +503,6 @@ const App: React.FC = () => {
                    <p className="text-xl font-space font-bold text-white">{stats.xp} XP</p>
                 </div>
               </div>
-
               <div className="space-y-3">
                 <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden">
                    {nextLevel && (
@@ -388,71 +514,58 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex justify-between text-[10px] font-bold text-slate-600 uppercase tracking-widest">
                    <span>{currentLevel.xpRequired} XP</span>
-                   {nextLevel ? (
-                     <span>Faltam {nextLevel.xpRequired - stats.xp} XP para {nextLevel.name}</span>
-                   ) : (
-                     <span>Nível Máximo Alcançado</span>
-                   )}
+                   {nextLevel ? <span>Faltam {nextLevel.xpRequired - stats.xp} XP para {nextLevel.name}</span> : <span>Nível Máximo</span>}
                    <span>{nextLevel?.xpRequired} XP</span>
                 </div>
               </div>
             </div>
 
-            {/* Cards de Métricas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
                  <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest block">Missões Concluídas</span>
                  <p className="text-4xl font-space font-bold text-white">{stats.completedCount || 0}</p>
-                 <p className="text-[10px] text-slate-500 uppercase font-medium">Arquivos sincronizados com sucesso</p>
+                 <p className="text-[10px] text-slate-500 uppercase font-medium">Arquivos sincronizados</p>
               </div>
               <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
                  <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest block">Tempo de Foco Total</span>
                  <p className="text-2xl font-space font-bold text-white truncate">
                    {formatSeconds(stats.timeLogs?.reduce((acc, log) => acc + log.seconds, 0) || 0)}
                  </p>
-                 <p className="text-[10px] text-slate-500 uppercase font-medium">Investimento real de energia</p>
               </div>
               <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
                  <span className="text-[8px] font-bold text-red-400 uppercase tracking-widest block">Protocolos Perdidos</span>
                  <p className="text-4xl font-space font-bold text-white">{stats.gaveUpCount || 0}</p>
-                 <p className="text-[10px] text-slate-500 uppercase font-medium">Missões abortadas no ciclo</p>
               </div>
             </div>
 
-            {/* Logs de Tempo */}
-            <div className="space-y-6">
-               <h2 className="text-[9px] tracking-[0.6em] text-slate-700 font-bold uppercase border-l-2 border-indigo-500/20 pl-4">Registro de Atividades Recentes</h2>
-               <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden">
-                  {stats.timeLogs && stats.timeLogs.length > 0 ? (
-                    <div className="divide-y divide-white/5">
-                      {stats.timeLogs.slice(0, 15).map((log, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-6 hover:bg-white/[0.02] transition-colors">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-space font-bold text-white uppercase">{log.taskTitle}</span>
-                            <span className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">{new Date(log.timestamp).toLocaleString('pt-BR')}</span>
-                          </div>
-                          <div className="text-right">
-                             <span className="text-[10px] font-mono font-bold text-indigo-400">+{formatSeconds(log.seconds)}</span>
-                          </div>
-                        </div>
-                      ))}
+            <div className="space-y-6 pb-20">
+               <h2 className="text-[9px] tracking-[0.6em] text-slate-700 font-bold uppercase border-l-2 border-indigo-500/20 pl-4">Logs Recentes</h2>
+               <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden divide-y divide-white/5">
+                  {stats.timeLogs?.slice(0, 15).map((log, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-6 hover:bg-white/[0.02]">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-space font-bold text-white uppercase">{log.taskTitle}</span>
+                        <span className="text-[8px] text-slate-600 font-bold uppercase">{new Date(log.timestamp).toLocaleString('pt-BR')}</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-indigo-400">+{formatSeconds(log.seconds)}</span>
                     </div>
-                  ) : (
-                    <div className="p-20 text-center">
-                       <p className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.3em]">Nenhum log de tempo registrado nesta era.</p>
-                    </div>
-                  )}
+                  ))}
                </div>
             </div>
-            
-            <div className="pb-20 text-center">
-               <p className="text-[8px] text-slate-800 font-bold uppercase tracking-[0.5em] italic">Fim da Transmissão de Dados</p>
+          </div>
+        )}
+
+        {mainView === 'EVOLUTION' && (
+          <div className="h-full flex flex-col items-center justify-center pb-20">
+            <div className="w-full max-w-5xl h-[300px] md:h-[500px]"><UniverseVisual level={stats.level} /></div>
+            <div className="mt-10 max-w-xl text-center space-y-3 px-4">
+               <h2 className="text-2xl font-space font-bold text-white uppercase tracking-widest">{currentLevel.name}</h2>
+               <p className="text-xs md:text-sm text-slate-400 italic font-light leading-relaxed">{isLoadingNarrative ? 'Conectando ao Oráculo...' : narrative}</p>
             </div>
           </div>
         )}
       </main>
 
-      {/* Render Active Timer Modals */}
       {tasks.filter(t => activeTaskIds.includes(t.id)).map((task, index) => (
         <TimerModal 
           key={task.id}
@@ -460,7 +573,8 @@ const App: React.FC = () => {
           stackIndex={index}
           onUpdateTask={(updates) => updateTask(task.id, updates)}
           onClose={() => setActiveTaskIds(prev => prev.filter(id => id !== task.id))} 
-          onComplete={(status, seconds) => handleTaskAction(status, seconds, task)} 
+          onComplete={(status, seconds) => handleTaskAction(status as any, seconds, task)} 
+          onToggleStep={(stepId) => toggleStep(task.id, stepId)}
         />
       ))}
     </div>
