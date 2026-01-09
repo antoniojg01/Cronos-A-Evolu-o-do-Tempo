@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode, TaskCategory } from './types.ts';
-import { LEVELS, XP_COMPLETED, XP_GAVE_UP, XP_IGNORED, XP_STEP } from './constants.ts';
+import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode, TaskCategory, LevelInfo } from './types.ts';
+import { LEVELS, XP_COMPLETED, XP_CYCLE, XP_GAVE_UP, XP_IGNORED, XP_STEP, XP_TIME_BLOCK } from './constants.ts';
 import { getLevelNarrative } from './services/geminiService.ts';
 import TimerModal from './components/TimerModal.tsx';
 import UniverseVisual from './components/UniverseVisual.tsx';
@@ -15,7 +15,17 @@ const PERIODS: Period[] = [
   { id: 'p4', name: '♾️ Constantes' }
 ];
 
+const ENCOURAGEMENTS = [
+  "O Universo vibra com sua nova frequência.",
+  "As estrelas se alinham ao seu comando.",
+  "Você transcendeu as limitações da matéria.",
+  "Sua luz atravessa as nébulas do tempo.",
+  "A sincronia perfeita foi estabelecida."
+];
+
 const App: React.FC = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
       const saved = localStorage.getItem('cronos_tasks');
@@ -62,6 +72,7 @@ const App: React.FC = () => {
   const [isLoadingNarrative, setIsLoadingNarrative] = useState(false);
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
   const [activeSubTab, setActiveSubTab] = useState<'DAILY' | 'ROUTINE'>('DAILY');
+  const [levelUpData, setLevelUpData] = useState<LevelInfo | null>(null);
   
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<PriorityLevel>(2);
@@ -113,7 +124,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (mainView === 'EVOLUTION' && !narrative) loadNarrative();
-  }, [mainView]);
+  }, [mainView, stats.level]);
 
   const loadNarrative = async () => {
     setIsLoadingNarrative(true);
@@ -122,12 +133,83 @@ const App: React.FC = () => {
     setIsLoadingNarrative(false);
   };
 
+  const exportData = () => {
+    const data = {
+      tasks,
+      stats,
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cronos_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target?.result as string);
+        if (imported.tasks && imported.stats) {
+          if (confirm("Isso substituirá todos os seus dados atuais. Continuar?")) {
+            setTasks(imported.tasks);
+            setStats(imported.stats);
+            alert("Protocolo restaurado com sucesso!");
+          }
+        } else {
+          alert("Arquivo de backup inválido.");
+        }
+      } catch (err) {
+        alert("Erro ao ler o arquivo de backup.");
+      }
+    };
+    reader.readAsText(file);
+    // Clear the input so the same file can be uploaded again
+    e.target.value = '';
+  };
+
+  const playAscensionSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playTone = (freq: number, time: number, dur: number, vol = 0.3) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, time);
+        g.gain.setValueAtTime(0, time);
+        g.gain.linearRampToValueAtTime(vol, time + 0.1);
+        g.gain.exponentialRampToValueAtTime(0.01, time + dur);
+        osc.connect(g);
+        g.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + dur);
+      };
+      const now = ctx.currentTime;
+      playTone(261.63, now, 0.8, 0.2); 
+      playTone(329.63, now + 0.15, 0.8, 0.2); 
+      playTone(392.00, now + 0.3, 0.8, 0.2); 
+      playTone(523.25, now + 0.45, 1.5, 0.4); 
+      playTone(659.25, now + 0.6, 2.0, 0.2); 
+    } catch(e) {}
+  };
+
   const updateStats = (xpChange: number, status: string, secondsSpent: number = 0, specificTask?: Task) => {
     setStats(prev => {
       let newXp = Math.max(0, (prev.xp || 0) + xpChange);
       const levelFound = LEVELS.filter(l => l.xpRequired <= newXp).pop();
       let newLevel = levelFound ? levelFound.level : 1;
       
+      if (newLevel > prev.level) {
+        setLevelUpData(levelFound || null);
+        playAscensionSound();
+      }
+
       const newLog = secondsSpent > 0 ? {
         timestamp: Date.now(),
         seconds: secondsSpent,
@@ -233,8 +315,11 @@ const App: React.FC = () => {
   };
 
   const handleTaskAction = (status: 'COMPLETED' | 'CYCLE_FINISHED' | 'GAVE_UP' | 'IGNORED', seconds: number, taskOverride: Task) => {
-    // Se for apenas conclusão de ciclo, não damos o XP completo de tarefa e não mudamos o status para concluído
-    const xp = status === 'COMPLETED' ? XP_COMPLETED : (status === 'GAVE_UP' ? XP_GAVE_UP : (status === 'IGNORED' ? XP_IGNORED : 0));
+    let xp = 0;
+    if (status === 'COMPLETED') xp = XP_COMPLETED;
+    else if (status === 'CYCLE_FINISHED') xp = XP_CYCLE;
+    else if (status === 'GAVE_UP') xp = XP_GAVE_UP;
+    else if (status === 'IGNORED') xp = XP_IGNORED;
     
     updateStats(xp, status, seconds, taskOverride);
     
@@ -292,6 +377,69 @@ const App: React.FC = () => {
 
   return (
     <div className="h-[100dvh] w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden font-inter">
+      {/* Hidden File Input for Import */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImport} 
+        accept=".json" 
+        className="hidden" 
+      />
+
+      {/* Enhanced Level Up Ascension Modal */}
+      {levelUpData && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-3xl animate-in fade-in zoom-in duration-500 overflow-hidden">
+          {/* Cosmic Background FX */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/20 blur-[120px] rounded-full animate-pulse"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-purple-500/20 blur-[100px] rounded-full animate-ping duration-[3000ms]"></div>
+          </div>
+
+          <div className="max-w-xl w-full text-center space-y-10 relative z-10 animate-in slide-in-from-bottom-20 duration-1000">
+            <div className="space-y-4">
+              <span className="text-[12px] font-black text-indigo-400 tracking-[1em] uppercase block animate-bounce">Ascensão de Nível</span>
+              <div className="relative inline-block">
+                <div className="absolute inset-0 bg-white/20 blur-2xl animate-pulse"></div>
+                <div className="text-[180px] md:text-[220px] font-space font-bold text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-indigo-800 leading-none filter drop-shadow-[0_0_30px_rgba(255,255,255,0.4)]">
+                  {levelUpData.level}
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <h2 className="text-4xl md:text-5xl font-space font-bold text-white uppercase tracking-tight leading-none">
+                  {levelUpData.name}
+                </h2>
+                <div className="h-0.5 w-32 bg-gradient-to-r from-transparent via-indigo-500 to-transparent mx-auto"></div>
+              </div>
+              
+              <div className="space-y-4 px-4">
+                <p className="text-slate-200 text-lg md:text-xl font-light italic leading-relaxed font-space max-w-md mx-auto">
+                  "{ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]}"
+                </p>
+                <div className="flex items-center justify-center gap-4">
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-full shadow-2xl">
+                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest block mb-1">Era Desbloqueada</span>
+                    <span className="text-sm text-white font-space font-bold uppercase">{levelUpData.storyEra}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => { setLevelUpData(null); setMainView('EVOLUTION'); }}
+              className="group relative w-full max-w-sm mx-auto h-20 bg-white hover:bg-indigo-50 text-slate-950 rounded-[2.5rem] font-space font-bold uppercase tracking-[0.2em] transition-all transform hover:scale-[1.03] active:scale-[0.97] shadow-[0_20px_50px_rgba(255,255,255,0.15)] overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/20 to-indigo-500/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              Continuar a Evolução
+            </button>
+            
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest opacity-50">Sua jornada pelo tempo está apenas começando.</p>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="w-full md:w-20 lg:w-24 bg-slate-900/40 border-b md:border-b-0 md:border-r border-white/5 flex md:flex-col items-center py-3 md:py-8 justify-around md:justify-start gap-4 md:gap-8 z-50 pt-safe">
           <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center font-space font-bold text-white text-lg md:mb-8 shadow-lg">C</div>
@@ -481,15 +629,36 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* STATISTICS and EVOLUTION sections are mostly unchanged but kept for context */}
+        {/* STATISTICS and EVOLUTION sections */}
         {mainView === 'STATISTICS' && (
           <div className="max-w-4xl mx-auto space-y-12 animate-in slide-in-from-bottom-5 duration-700">
             <header className="border-b border-white/5 pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-              <div>
+              <div className="flex-1">
                 <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase">Relatório Galáctico</h1>
                 <p className="text-[9px] tracking-[0.4em] text-slate-500 font-bold uppercase mt-1 italic">Métricas de Sincronização do Guardião</p>
               </div>
-              <button onClick={() => { if(confirm("Deseja apagar TODO o seu progresso?")) { setStats({ xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] }); setTasks([]); } }} className="text-[8px] font-bold text-red-500/50 hover:text-red-500 border border-red-500/20 px-4 py-2 rounded-xl uppercase tracking-[0.3em] transition-all bg-red-500/5">Resetar Todo Progresso</button>
+              <div className="flex flex-wrap gap-2">
+                <button 
+                  onClick={exportData} 
+                  className="flex items-center gap-2 text-[8px] font-bold text-indigo-400 hover:text-white border border-indigo-400/20 px-4 py-2 rounded-xl uppercase tracking-[0.2em] transition-all bg-indigo-400/5 hover:bg-indigo-400/20"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  Exportar
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  className="flex items-center gap-2 text-[8px] font-bold text-emerald-400 hover:text-white border border-emerald-400/20 px-4 py-2 rounded-xl uppercase tracking-[0.2em] transition-all bg-emerald-400/5 hover:bg-emerald-400/20"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  Importar
+                </button>
+                <button 
+                  onClick={() => { if(confirm("Deseja apagar TODO o seu progresso?")) { setStats({ xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] }); setTasks([]); } }} 
+                  className="text-[8px] font-bold text-red-500/50 hover:text-red-500 border border-red-500/20 px-4 py-2 rounded-xl uppercase tracking-[0.3em] transition-all bg-red-500/5 hover:bg-red-500/10"
+                >
+                  Resetar Tudo
+                </button>
+              </div>
             </header>
 
             <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] p-8 md:p-10 space-y-6">
@@ -575,6 +744,7 @@ const App: React.FC = () => {
           onClose={() => setActiveTaskIds(prev => prev.filter(id => id !== task.id))} 
           onComplete={(status, seconds) => handleTaskAction(status as any, seconds, task)} 
           onToggleStep={(stepId) => toggleStep(task.id, stepId)}
+          onReward={(xp) => updateStats(xp, 'TIME_REWARD', 0, task)}
         />
       ))}
     </div>
