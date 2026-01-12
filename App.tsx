@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode, TaskCategory, LevelInfo } from './types.ts';
+import { Task, UserStats, TimeLog, Period, TaskStep, PriorityLevel, CompletionMode, TaskCategory, LevelInfo, NebulaTheme } from './types.ts';
 import { LEVELS, XP_COMPLETED, XP_CYCLE, XP_GAVE_UP, XP_IGNORED, XP_STEP, XP_TIME_BLOCK } from './constants.ts';
 import { getLevelNarrative } from './services/geminiService.ts';
 import TimerModal from './components/TimerModal.tsx';
@@ -21,6 +21,15 @@ const ENCOURAGEMENTS = [
   "Você transcendeu as limitações da matéria.",
   "Sua luz atravessa as nébulas do tempo.",
   "A sincronia perfeita foi estabelecida."
+];
+
+const NEBULA_PRESETS: NebulaTheme[] = [
+  { name: 'Vácuo Índigo', primary: '#4338ca', secondary: '#1e1b4b' },
+  { name: 'Supernova Rubi', primary: '#e11d48', secondary: '#4c0519' },
+  { name: 'Aurora Esmeralda', primary: '#10b981', secondary: '#064e3b' },
+  { name: 'Névoa Dourada', primary: '#f59e0b', secondary: '#78350f' },
+  { name: 'Abismo Cinzento', primary: '#475569', secondary: '#0f172a' },
+  { name: 'Plasma Violeta', primary: '#a855f7', secondary: '#3b0764' },
 ];
 
 const App: React.FC = () => {
@@ -60,7 +69,7 @@ const App: React.FC = () => {
   });
   
   const [stats, setStats] = useState<UserStats>(() => {
-    const d = { xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] };
+    const d: UserStats = { xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [], nebulaTheme: NEBULA_PRESETS[0] };
     try {
       const saved = localStorage.getItem('cronos_stats');
       return saved ? { ...d, ...JSON.parse(saved) } : d;
@@ -170,33 +179,7 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
-    // Clear the input so the same file can be uploaded again
     e.target.value = '';
-  };
-
-  const playAscensionSound = () => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const playTone = (freq: number, time: number, dur: number, vol = 0.3) => {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, time);
-        g.gain.setValueAtTime(0, time);
-        g.gain.linearRampToValueAtTime(vol, time + 0.1);
-        g.gain.exponentialRampToValueAtTime(0.01, time + dur);
-        osc.connect(g);
-        g.connect(ctx.destination);
-        osc.start(time);
-        osc.stop(time + dur);
-      };
-      const now = ctx.currentTime;
-      playTone(261.63, now, 0.8, 0.2); 
-      playTone(329.63, now + 0.15, 0.8, 0.2); 
-      playTone(392.00, now + 0.3, 0.8, 0.2); 
-      playTone(523.25, now + 0.45, 1.5, 0.4); 
-      playTone(659.25, now + 0.6, 2.0, 0.2); 
-    } catch(e) {}
   };
 
   const updateStats = (xpChange: number, status: string, secondsSpent: number = 0, specificTask?: Task) => {
@@ -207,7 +190,6 @@ const App: React.FC = () => {
       
       if (newLevel > prev.level) {
         setLevelUpData(levelFound || null);
-        playAscensionSound();
       }
 
       const newLog = secondsSpent > 0 ? {
@@ -371,254 +353,226 @@ const App: React.FC = () => {
     return `${m}m ${s}s`;
   };
 
+  const changeNebulaTheme = (theme: Partial<NebulaTheme>) => {
+    setStats(prev => ({
+      ...prev,
+      nebulaTheme: { ...prev.nebulaTheme!, ...theme }
+    }));
+  };
+
   const priorityLabels = { 1: "ALTA", 2: "MÉDIA", 3: "BAIXA" };
   const priorityColors = { 1: "bg-red-500", 2: "bg-indigo-500", 3: "bg-slate-700" };
   const priorityText = { 1: "text-red-400", 2: "text-indigo-400", 3: "text-slate-500" };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden font-inter">
-      {/* Hidden File Input for Import */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleImport} 
-        accept=".json" 
-        className="hidden" 
-      />
+    <div className="h-[100dvh] w-full flex flex-col md:flex-row bg-[#020617] text-slate-200 overflow-hidden font-inter select-none">
+      <style>{`
+        .tab-glow { text-shadow: 0 0 15px rgba(129, 140, 248, 0.4); }
+        .active-text-gradient {
+          background: linear-gradient(135deg, #fff 0%, #818cf8 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+        .inactive-text-style { color: rgba(148, 163, 184, 0.3); }
+        .console-blur { backdrop-filter: blur(24px) saturate(180%); }
+        .hologram-card { 
+          background: rgba(255, 255, 255, 0.015);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          box-shadow: inset 0 0 10px rgba(129, 140, 248, 0.02);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .floating-nav {
+          box-shadow: 0 -10px 40px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.05);
+        }
+      `}</style>
+      <input type="file" ref={fileInputRef} onChange={handleImport} accept=".json" className="hidden" />
 
-      {/* Enhanced Level Up Ascension Modal */}
+      {/* Ascension Modal */}
       {levelUpData && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-3xl animate-in fade-in zoom-in duration-500 overflow-hidden">
-          {/* Cosmic Background FX */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/20 blur-[120px] rounded-full animate-pulse"></div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-purple-500/20 blur-[100px] rounded-full animate-ping duration-[3000ms]"></div>
-          </div>
-
-          <div className="max-w-xl w-full text-center space-y-10 relative z-10 animate-in slide-in-from-bottom-20 duration-1000">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-3xl animate-in fade-in zoom-in duration-500 overflow-hidden">
+          <div className="max-w-xl w-full text-center space-y-8 relative z-10">
+            <div className="space-y-2">
+              <span className="text-[10px] font-black text-indigo-400 tracking-[0.8em] uppercase block animate-pulse">Evolução Detectada</span>
+              <div className="text-8xl md:text-[180px] font-space font-bold text-white leading-none filter drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+                {levelUpData.level}
+              </div>
+            </div>
             <div className="space-y-4">
-              <span className="text-[12px] font-black text-indigo-400 tracking-[1em] uppercase block animate-bounce">Ascensão de Nível</span>
-              <div className="relative inline-block">
-                <div className="absolute inset-0 bg-white/20 blur-2xl animate-pulse"></div>
-                <div className="text-[180px] md:text-[220px] font-space font-bold text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-indigo-800 leading-none filter drop-shadow-[0_0_30px_rgba(255,255,255,0.4)]">
-                  {levelUpData.level}
-                </div>
-              </div>
+              <h2 className="text-3xl md:text-5xl font-space font-bold text-white uppercase tracking-tight">{levelUpData.name}</h2>
+              <p className="text-slate-400 text-sm md:text-lg font-light italic max-w-xs mx-auto">"{ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]}"</p>
             </div>
-            
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <h2 className="text-4xl md:text-5xl font-space font-bold text-white uppercase tracking-tight leading-none">
-                  {levelUpData.name}
-                </h2>
-                <div className="h-0.5 w-32 bg-gradient-to-r from-transparent via-indigo-500 to-transparent mx-auto"></div>
-              </div>
-              
-              <div className="space-y-4 px-4">
-                <p className="text-slate-200 text-lg md:text-xl font-light italic leading-relaxed font-space max-w-md mx-auto">
-                  "{ENCOURAGEMENTS[Math.floor(Math.random() * ENCOURAGEMENTS.length)]}"
-                </p>
-                <div className="flex items-center justify-center gap-4">
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-full shadow-2xl">
-                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest block mb-1">Era Desbloqueada</span>
-                    <span className="text-sm text-white font-space font-bold uppercase">{levelUpData.storyEra}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => { setLevelUpData(null); setMainView('EVOLUTION'); }}
-              className="group relative w-full max-w-sm mx-auto h-20 bg-white hover:bg-indigo-50 text-slate-950 rounded-[2.5rem] font-space font-bold uppercase tracking-[0.2em] transition-all transform hover:scale-[1.03] active:scale-[0.97] shadow-[0_20px_50px_rgba(255,255,255,0.15)] overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/20 to-indigo-500/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              Continuar a Evolução
-            </button>
-            
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest opacity-50">Sua jornada pelo tempo está apenas começando.</p>
+            <button onClick={() => { setLevelUpData(null); setMainView('EVOLUTION'); }} className="w-full max-w-xs mx-auto h-16 bg-white text-slate-950 rounded-2xl font-space font-bold uppercase tracking-[0.2em] shadow-2xl active:scale-95 transition-all">Sincronizar</button>
           </div>
         </div>
       )}
 
-      {/* Navigation */}
-      <nav className="w-full md:w-20 lg:w-24 bg-slate-900/40 border-b md:border-b-0 md:border-r border-white/5 flex md:flex-col items-center py-3 md:py-8 justify-around md:justify-start gap-4 md:gap-8 z-50 pt-safe">
-          <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center font-space font-bold text-white text-lg md:mb-8 shadow-lg">C</div>
-          <button onClick={() => setMainView('DASHBOARD')} className={`p-3 rounded-2xl transition-all ${mainView === 'DASHBOARD' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600 hover:text-slate-400'}`} title="Dashboard"><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" /></svg></button>
-          <button onClick={() => setMainView('EVOLUTION')} className={`p-3 rounded-2xl transition-all ${mainView === 'EVOLUTION' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600 hover:text-slate-400'}`} title="Evolução"><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></button>
-          <button onClick={() => setMainView('STATISTICS')} className={`p-3 rounded-2xl transition-all ${mainView === 'STATISTICS' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-600 hover:text-slate-400'}`} title="Estatísticas"><svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg></button>
+      {/* Navigation - Floating Tablet/Console for Mobile, Sidebar for Desktop */}
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-sm h-16 md:h-screen md:w-20 lg:w-24 md:static md:translate-x-0 md:left-0 md:max-w-none bg-slate-900/60 console-blur border border-white/10 md:border-none rounded-3xl md:rounded-none flex md:flex-col items-center justify-around md:justify-start gap-0 md:gap-8 z-50 floating-nav md:py-8">
+          <div className="hidden md:flex w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 items-center justify-center font-space font-bold text-white text-lg mb-8 shadow-lg">C</div>
+          
+          <button onClick={() => setMainView('DASHBOARD')} className={`flex flex-col items-center gap-1 p-3 transition-all ${mainView === 'DASHBOARD' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-300'}`}>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+            <span className="text-[6px] font-black uppercase tracking-[0.2em] md:hidden">Sincronia</span>
+          </button>
+          
+          <button onClick={() => setMainView('EVOLUTION')} className={`flex flex-col items-center gap-1 p-3 transition-all ${mainView === 'EVOLUTION' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-300'}`}>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            <span className="text-[6px] font-black uppercase tracking-[0.2em] md:hidden">Cosmos</span>
+          </button>
+          
+          <button onClick={() => setMainView('STATISTICS')} className={`flex flex-col items-center gap-1 p-3 transition-all ${mainView === 'STATISTICS' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-300'}`}>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            <span className="text-[6px] font-black uppercase tracking-[0.2em] md:hidden">Arquivo</span>
+          </button>
       </nav>
 
-      <main className="flex-1 overflow-y-auto px-5 py-8 md:px-16 lg:px-24 custom-scrollbar px-safe pb-safe">
+      <main className="flex-1 overflow-y-auto px-5 py-8 md:px-16 lg:px-24 custom-scrollbar pb-32 md:pb-8 pt-safe">
         
         {mainView === 'DASHBOARD' && (
-          <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in duration-500">
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/5 pb-8">
-              <div>
-                <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase">Sincronia Global</h1>
-                <p className="text-[9px] tracking-[0.4em] text-slate-500 font-bold uppercase mt-1 italic">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          <div className="max-w-4xl mx-auto space-y-10 md:space-y-12 animate-in fade-in duration-500">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-2 md:gap-4 border-b border-white/5 pb-6">
+              <div className="space-y-1">
+                <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase leading-none">Status Orbital</h1>
+                <p className="text-[8px] md:text-[9px] tracking-[0.5em] text-slate-500 font-bold uppercase italic opacity-60">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
               </div>
               {activeSubTab === 'ROUTINE' && (
-                <button onClick={resetAllRoutines} className="text-[8px] font-bold text-cyan-400 hover:text-cyan-300 border border-cyan-400/30 px-4 py-2 rounded-xl uppercase tracking-[0.3em] bg-cyan-400/5 shadow-sm active:scale-95 transition-all">Reiniciar Ciclo</button>
+                <button onClick={resetAllRoutines} className="w-full md:w-auto text-[8px] font-black text-cyan-400 border border-cyan-400/20 px-6 py-3 rounded-2xl uppercase tracking-[0.3em] bg-cyan-400/5 active:scale-95 transition-all">Reiniciar Órbita</button>
               )}
             </header>
 
-            <div className="flex gap-6 border-b border-white/5 pb-2">
+            {/* Segmented Control - Futuro Style */}
+            <div className="bg-white/[0.03] p-1 rounded-2xl border border-white/5 flex gap-1">
               {['DAILY', 'ROUTINE'].map(t => (
-                <button key={t} onClick={() => setActiveSubTab(t as any)} className={`pb-4 text-[10px] md:text-[11px] font-bold tracking-[0.2em] uppercase transition-all relative ${activeSubTab === t ? 'text-white' : 'text-slate-600 hover:text-slate-400'}`}>
-                  {t === 'DAILY' ? 'Objetivos' : 'Rotinas Diárias'}
-                  {activeSubTab === t && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />}
+                <button 
+                  key={t} 
+                  onClick={() => setActiveSubTab(t as any)} 
+                  className={`flex-1 py-3 rounded-xl text-[10px] md:text-[12px] font-space font-bold tracking-[0.2em] uppercase transition-all duration-300 relative ${activeSubTab === t ? 'bg-indigo-500/20 text-white shadow-lg' : 'text-slate-500 hover:text-slate-400'}`}
+                >
+                  {t === 'DAILY' ? 'Singularidades' : 'Ciclos Orbitais'}
                 </button>
               ))}
             </div>
 
-            <form onSubmit={addTask} className="space-y-6 bg-white/[0.01] p-6 rounded-3xl border border-white/5">
-              <div className="relative group">
-                <input type="text" placeholder={`Injetar novo ${activeSubTab === 'DAILY' ? 'objetivo' : 'protocolo'}...`} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full h-14 md:h-16 bg-transparent border-b border-white/10 text-lg md:text-2xl text-white outline-none focus:border-indigo-500 transition-all placeholder:text-slate-800 font-space" />
-                <button type="submit" className="absolute right-0 bottom-4 text-slate-700 hover:text-indigo-400 text-[10px] font-bold tracking-widest uppercase transition-colors">ADD +</button>
+            {/* Input Terminal */}
+            <form onSubmit={addTask} className="space-y-6 bg-indigo-500/[0.02] p-6 rounded-[2rem] border border-indigo-500/10 shadow-inner">
+              <div className="relative">
+                <input type="text" placeholder="Injetar novos dados no sistema..." value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="w-full h-12 md:h-16 bg-transparent border-b border-indigo-500/20 text-lg md:text-2xl text-white outline-none focus:border-indigo-400 transition-all placeholder:text-slate-700 font-space" />
+                <button type="submit" className="absolute right-0 bottom-2 text-indigo-400 text-[10px] font-black tracking-widest uppercase">+ ADD</button>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Passos do Protocolo</span>
+                  <span className="text-[7px] font-black text-slate-600 uppercase tracking-[0.4em]">Protocolos Secundários</span>
                   <div className="flex gap-2">
-                      <input type="text" placeholder="Adicionar passo..." value={newTaskStepInput} onChange={e => setNewTaskStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addStepToNewTask())} className="flex-1 bg-white/5 rounded-xl px-4 py-2 text-xs outline-none focus:ring-1 ring-indigo-500 border border-white/5" />
-                      <button type="button" onClick={addStepToNewTask} className="px-4 bg-indigo-500/10 text-indigo-400 rounded-xl text-[10px] font-bold uppercase">+</button>
+                      <input type="text" placeholder="Novo módulo..." value={newTaskStepInput} onChange={e => setNewTaskStepInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addStepToNewTask())} className="flex-1 bg-white/5 rounded-xl px-4 py-3 text-xs outline-none focus:ring-1 ring-indigo-500 border border-white/5" />
+                      <button type="button" onClick={addStepToNewTask} className="px-5 bg-indigo-500/20 text-indigo-400 rounded-xl text-lg">+</button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                       {newTaskSteps.map((s, i) => (
-                        <div key={i} className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
-                          <span className="text-[9px] text-slate-300">{s}</span>
-                          <button type="button" onClick={() => removeStepFromNewTask(i)} className="text-red-500/50 hover:text-red-500 text-xs">&times;</button>
+                        <div key={i} className="flex items-center gap-2 bg-indigo-500/5 px-3 py-1.5 rounded-lg border border-indigo-500/10">
+                          <span className="text-[8px] text-indigo-300/70 font-bold uppercase">{s}</span>
+                          <button type="button" onClick={() => removeStepFromNewTask(i)} className="text-red-500/50 text-xs">&times;</button>
                         </div>
                       ))}
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Categoria de Foco</span>
+                  <span className="text-[7px] font-black text-slate-600 uppercase tracking-[0.4em]">Tipo de Carga</span>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => setNewTaskCategory('WORK')} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'WORK' ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-500/10' : 'bg-white/5 border-white/5 text-slate-600 hover:text-slate-400'}`}>💼 Trabalho</button>
-                    <button type="button" onClick={() => setNewTaskCategory('LEISURE')} className={`flex-1 py-3 rounded-2xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'LEISURE' ? 'bg-amber-500/10 border-amber-500 text-amber-500 shadow-lg shadow-amber-500/10' : 'bg-white/5 border-white/5 text-slate-600 hover:text-slate-400'}`}>🎮 Lazer</button>
+                    <button type="button" onClick={() => setNewTaskCategory('WORK')} className={`flex-1 py-4 rounded-xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'WORK' ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-md' : 'bg-white/5 border-white/5 text-slate-600'}`}>Executivo</button>
+                    <button type="button" onClick={() => setNewTaskCategory('LEISURE')} className={`flex-1 py-4 rounded-xl text-[9px] font-bold uppercase border transition-all ${newTaskCategory === 'LEISURE' ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 shadow-md' : 'bg-white/5 border-white/5 text-slate-600'}`}>Lúdico</button>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-[8px] md:text-[9px] font-bold tracking-widest uppercase text-slate-600 border-t border-white/5 pt-4">
-                <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-4 text-[8px] md:text-[9px] font-black tracking-[0.3em] uppercase text-slate-600 pt-4 border-t border-white/5">
+                <div className="flex gap-4">
                   {[1, 2, 3].map(p => (
-                    <button key={p} type="button" onClick={() => setNewTaskPriority(p as any)} className={`transition-colors ${newTaskPriority === p ? priorityText[p as PriorityLevel] : 'hover:text-slate-400'}`}>{priorityLabels[p as PriorityLevel]}</button>
+                    <button key={p} type="button" onClick={() => setNewTaskPriority(p as any)} className={`transition-all ${newTaskPriority === p ? priorityText[p as PriorityLevel] : 'hover:text-slate-400'}`}>{priorityLabels[p as PriorityLevel]}</button>
                   ))}
                 </div>
-                <div className="w-[1px] h-3 bg-white/10" />
-                <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="bg-transparent text-indigo-400 outline-none cursor-pointer">
+                <div className="flex-1" />
+                <select value={selectedPeriodForAdd} onChange={e => setSelectedPeriodForAdd(e.target.value)} className="bg-transparent text-indigo-400 outline-none cursor-pointer border-b border-indigo-500/20 pb-1">
                   {PERIODS.map(p => <option key={p.id} value={p.id} className="bg-slate-900">{p.name}</option>)}
                 </select>
-                <div className="w-[1px] h-3 bg-white/10" />
-                <button type="button" onClick={() => setNewTaskRequiresInput(!newTaskRequiresInput)} className={`transition-all ${newTaskRequiresInput ? 'text-indigo-400' : 'hover:text-slate-400'}`}>
-                  {newTaskRequiresInput ? '📝 Notas ON' : '📝 Notas OFF'}
-                </button>
               </div>
             </form>
 
-            <div className="space-y-16 pb-20">
+            {/* List of Tasks - Hologram Style */}
+            <div className="space-y-12 pb-20">
               {PERIODS.map(period => {
                 const filteredTasks = tasks.filter(t => t.type === activeSubTab && t.periodId === period.id);
                 const pending = filteredTasks.filter(t => t.status === 'PENDING').sort((a,b) => (a.priority || 2) - (b.priority || 2));
                 const completed = filteredTasks.filter(t => t.status !== 'PENDING');
-                
                 if (filteredTasks.length === 0) return null;
-
                 return (
-                  <section key={period.id} className="space-y-6">
-                    <h2 className="text-[9px] tracking-[0.6em] text-slate-700 font-bold uppercase border-l-2 border-indigo-500/20 pl-4 mb-8">{period.name} <span className="opacity-30 ml-2">/ {pending.length} pendentes</span></h2>
-                    
-                    <div className="space-y-[1px] rounded-3xl overflow-hidden border border-white/5">
+                  <section key={period.id} className="space-y-4">
+                    <h2 className="text-[9px] tracking-[0.6em] text-indigo-500/50 font-black uppercase flex items-center gap-4">
+                      {period.name} <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/20 to-transparent" />
+                    </h2>
+                    <div className="space-y-3">
                       {pending.map(task => (
-                        <div key={task.id} className="group bg-white/[0.02] hover:bg-white/[0.04] transition-all border-l-2 border-transparent hover:border-indigo-500">
-                          <div className="flex flex-row items-center gap-4 py-4 px-4 md:px-6">
-                            <div className={`w-1 h-6 rounded-full flex-shrink-0 ${priorityColors[task.priority || 2]}`} />
-                            <div className="flex-1 cursor-pointer min-w-0" onClick={() => setExpandedTasks(p => ({...p, [task.id]: !p[task.id]}))}>
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <h3 className="text-base md:text-lg font-space font-medium text-slate-300 group-hover:text-white transition-colors truncate">{task.title}</h3>
-                                {task.category === 'LEISURE' ? (
-                                  <span className="text-[7px] font-bold text-amber-500/70 border border-amber-500/20 px-1.5 rounded-sm uppercase tracking-tighter">Lazer</span>
-                                ) : (
-                                  <span className="text-[7px] font-bold text-indigo-400/70 border border-indigo-400/20 px-1.5 rounded-sm uppercase tracking-tighter">Trabalho</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className={`text-[7px] md:text-[8px] font-bold uppercase tracking-widest ${priorityText[task.priority || 2]}`}>{priorityLabels[task.priority || 2]}</span>
-                                {task.steps && task.steps.length > 0 && (
-                                  <span className="text-[7px] text-slate-500 uppercase tracking-widest border border-white/5 px-1.5 rounded-sm">
-                                    {task.steps.filter(s => s.completed).length}/{task.steps.length} Etapas
+                        <div key={task.id} className="hologram-card rounded-2xl overflow-hidden transition-all duration-300 active:scale-[0.98]">
+                          <div className="flex items-center gap-4 py-5 px-5">
+                            <div className={`w-1 h-8 rounded-full ${priorityColors[task.priority || 2]} shadow-[0_0_10px_currentColor]`} />
+                            <div className="flex-1 min-w-0" onClick={() => setExpandedTasks(p => ({...p, [task.id]: !p[task.id]}))}>
+                                <h3 className="text-base font-space font-medium text-slate-200 truncate">{task.title}</h3>
+                                <div className="flex gap-2 items-center mt-1">
+                                  <span className={`text-[7px] font-black uppercase tracking-widest ${priorityText[task.priority || 2]}`}>{priorityLabels[task.priority || 2]}</span>
+                                  <div className="w-1 h-1 rounded-full bg-slate-800" />
+                                  <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">
+                                    {task.steps?.filter(s => s.completed).length}/{task.steps?.length} Módulos
                                   </span>
-                                )}
-                              </div>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <button onClick={() => toggleTaskTimer(task.id)} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-95 ${task.category === 'LEISURE' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white' : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white'}`}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                              </button>
-                              <div className="flex flex-col gap-1">
-                                <button onClick={() => handleTaskAction('CYCLE_FINISHED', 0, task)} title="Concluir Ciclo" className="w-7 h-7 rounded-lg border border-white/5 flex items-center justify-center text-slate-600 hover:text-indigo-400 transition-colors">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                                </button>
-                                <button onClick={() => handleTaskAction('COMPLETED', 0, task)} title="Finalizar Totalmente" className="w-7 h-7 rounded-lg border border-white/5 flex items-center justify-center text-slate-600 hover:text-emerald-400 transition-colors">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7m-14 4l4 4L19 7" /></svg>
-                                </button>
-                              </div>
-                            </div>
+                            <button onClick={() => toggleTaskTimer(task.id)} className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${task.category === 'LEISURE' ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-500/10 text-indigo-400'} border border-white/5`}>
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            </button>
                           </div>
-
                           {expandedTasks[task.id] && (
-                            <div className="px-6 md:px-16 pb-8 space-y-8 animate-in slide-in-from-top-1 duration-300">
-                              <div className="space-y-4">
-                                 <span className="text-[9px] font-bold text-slate-600 uppercase tracking-[0.3em] block">Protocolo Detalhado</span>
-                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {task.steps?.map(step => (
-                                      <div key={step.id} className="flex items-center gap-3 bg-white/[0.01] border border-white/5 p-3 rounded-xl hover:border-indigo-500/30 transition-all">
-                                         <button onClick={() => toggleStep(task.id, step.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${step.completed ? 'bg-indigo-500 border-indigo-400' : 'border-white/10 hover:border-indigo-400'}`}>
-                                            {step.completed && <span className="text-[10px]">✓</span>}
-                                         </button>
-                                         <span className={`text-xs flex-1 ${step.completed ? 'text-slate-600 line-through' : 'text-slate-300'}`}>{step.title}</span>
-                                         <button onClick={() => updateTask(task.id, { steps: task.steps?.filter(s => s.id !== step.id) })} className="text-red-500/30 hover:text-red-500 transition-colors">&times;</button>
-                                      </div>
-                                    ))}
-                                    <div className="flex items-center gap-2 p-1 bg-white/[0.02] rounded-xl border border-dashed border-white/10">
-                                       <input type="text" placeholder="Novo passo..." onKeyDown={e => e.key === 'Enter' && (addStepToExistingTask(task.id, e.currentTarget.value), e.currentTarget.value = '')} className="flex-1 bg-transparent px-3 py-1 text-xs outline-none" />
-                                    </div>
-                                 </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/[0.01] p-6 rounded-2xl border border-white/5">
-                                <div className="space-y-4">
-                                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest block">Sincronia Temporal</span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {PERIODS.map(p => (
-                                      <button key={p.id} onClick={() => updateTask(task.id, { periodId: p.id })} className={`px-2.5 py-1.5 rounded-lg text-[8px] font-bold border transition-all ${task.periodId === p.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-white/5 text-slate-600 hover:border-white/20'}`}>{p.name}</button>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="space-y-4">
-                                  <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest block">Ações do Sistema</span>
+                            <div className="px-5 pb-6 pt-4 space-y-6 animate-in slide-in-from-top-2 duration-300 border-t border-white/5">
+                               <div className="space-y-3">
+                                  <span className="text-[7px] font-black text-slate-600 uppercase tracking-[0.4em] block">Status de Prioridade</span>
                                   <div className="flex gap-2">
-                                    <button onClick={() => updateTask(task.id, { category: task.category === 'WORK' ? 'LEISURE' : 'WORK' })} className="flex-1 py-1.5 rounded-lg text-[8px] font-bold border border-white/5 text-slate-400 hover:text-white transition-all uppercase tracking-widest">Alternar Tipo</button>
-                                    <button onClick={() => { if(confirm("Apagar permanentemente?")) setTasks(prev => prev.filter(t => t.id !== task.id)) }} className="flex-1 py-1.5 rounded-lg text-[8px] font-bold border border-red-500/20 text-red-500/50 hover:text-red-500 transition-all uppercase tracking-widest">Excluir</button>
+                                    {[1, 2, 3].map(p => (
+                                      <button 
+                                        key={p} 
+                                        onClick={(e) => { e.stopPropagation(); updateTask(task.id, { priority: p as PriorityLevel }); }}
+                                        className={`flex-1 py-2 rounded-xl text-[8px] font-black uppercase border transition-all ${task.priority === p ? `${priorityColors[p as PriorityLevel]} border-transparent text-white shadow-lg` : 'bg-white/5 border-white/5 text-slate-500'}`}
+                                      >
+                                        {priorityLabels[p as PriorityLevel]}
+                                      </button>
+                                    ))}
                                   </div>
-                                </div>
-                              </div>
+                               </div>
+
+                               <div className="space-y-3">
+                                  <span className="text-[7px] font-black text-slate-600 uppercase tracking-[0.4em] block">Protocolos Secundários</span>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                     {task.steps?.map(step => (
+                                       <div key={step.id} onClick={(e) => { e.stopPropagation(); toggleStep(task.id, step.id); }} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${step.completed ? 'bg-indigo-500/10 border-indigo-500/20 opacity-60' : 'bg-white/[0.02] border-white/5'}`}>
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${step.completed ? 'bg-indigo-500 border-indigo-400' : 'border-white/20'}`}>{step.completed && <span className="text-[10px]">✓</span>}</div>
+                                          <span className={`text-xs flex-1 ${step.completed ? 'text-slate-600 line-through' : 'text-slate-300'}`}>{step.title}</span>
+                                       </div>
+                                     ))}
+                                  </div>
+                               </div>
+
+                               <div className="flex gap-2">
+                                  <button onClick={(e) => { e.stopPropagation(); handleTaskAction('COMPLETED', 0, task); }} className="flex-1 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-[0.2em]">Finalizar Protocolo</button>
+                                  <button onClick={(e) => { e.stopPropagation(); updateTask(task.id, { category: task.category === 'WORK' ? 'LEISURE' : 'WORK' }) }} className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg></button>
+                                  <button onClick={(e) => { e.stopPropagation(); if(confirm("Apagar permanentemente?")) setTasks(prev => prev.filter(t => t.id !== task.id)) }} className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                               </div>
                             </div>
                           )}
                         </div>
                       ))}
-
                       {completed.map(task => (
-                        <div key={task.id} className="flex flex-row items-center gap-4 py-4 px-4 border-b border-white/5 bg-slate-950/20 opacity-40 hover:opacity-100 transition-all">
-                           <div className={`w-1 h-3 rounded-full flex-shrink-0 ${task.status === 'COMPLETED' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                           <div className="flex-1 min-w-0">
-                             <span className="text-xs font-space line-through text-slate-600 truncate block">{task.title}</span>
-                           </div>
-                           <button onClick={() => restoreTask(task.id)} className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest hover:text-white transition-colors">Refazer</button>
+                        <div key={task.id} className="flex flex-row items-center gap-4 py-3 px-5 rounded-xl border border-white/5 bg-slate-950/20 opacity-30">
+                           <div className="w-1 h-3 rounded-full bg-emerald-500/50" />
+                           <span className="text-xs font-space line-through text-slate-600 flex-1 truncate">{task.title}</span>
+                           <button onClick={() => restoreTask(task.id)} className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">Reativar</button>
                         </div>
                       ))}
                     </div>
@@ -629,94 +583,52 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* STATISTICS and EVOLUTION sections */}
         {mainView === 'STATISTICS' && (
-          <div className="max-w-4xl mx-auto space-y-12 animate-in slide-in-from-bottom-5 duration-700">
-            <header className="border-b border-white/5 pb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-              <div className="flex-1">
-                <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase">Relatório Galáctico</h1>
-                <p className="text-[9px] tracking-[0.4em] text-slate-500 font-bold uppercase mt-1 italic">Métricas de Sincronização do Guardião</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button 
-                  onClick={exportData} 
-                  className="flex items-center gap-2 text-[8px] font-bold text-indigo-400 hover:text-white border border-indigo-400/20 px-4 py-2 rounded-xl uppercase tracking-[0.2em] transition-all bg-indigo-400/5 hover:bg-indigo-400/20"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  Exportar
-                </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()} 
-                  className="flex items-center gap-2 text-[8px] font-bold text-emerald-400 hover:text-white border border-emerald-400/20 px-4 py-2 rounded-xl uppercase tracking-[0.2em] transition-all bg-emerald-400/5 hover:bg-emerald-400/20"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  Importar
-                </button>
-                <button 
-                  onClick={() => { if(confirm("Deseja apagar TODO o seu progresso?")) { setStats({ xp: 0, level: 1, completedCount: 0, gaveUpCount: 0, ignoredCount: 0, timeLogs: [] }); setTasks([]); } }} 
-                  className="text-[8px] font-bold text-red-500/50 hover:text-red-500 border border-red-500/20 px-4 py-2 rounded-xl uppercase tracking-[0.3em] transition-all bg-red-500/5 hover:bg-red-500/10"
-                >
-                  Resetar Tudo
-                </button>
+          <div className="max-w-4xl mx-auto space-y-10 animate-in slide-in-from-bottom-5 duration-700">
+            <header className="border-b border-white/5 pb-6">
+              <h1 className="text-3xl md:text-5xl font-space font-bold tracking-tighter text-white uppercase leading-none">Arquivo de Dados</h1>
+              <div className="flex gap-2 mt-6">
+                <button onClick={exportData} className="flex-1 py-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-[0.2em]">Exportar Backup</button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-[0.2em]">Importar</button>
               </div>
             </header>
-
-            <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] p-8 md:p-10 space-y-6">
+            
+            <div className="hologram-card rounded-[2.5rem] p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
-                  <span className="text-[9px] font-bold text-indigo-400 uppercase tracking-[0.3em]">Nível Atual</span>
-                  <h2 className="text-4xl font-space font-bold text-white uppercase">{currentLevel.level} - {currentLevel.name}</h2>
-                </div>
-                <div className="text-right">
-                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em]">Total de Experiência</span>
-                   <p className="text-xl font-space font-bold text-white">{stats.xp} XP</p>
+                  <span className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.4em]">Nível de Evolução</span>
+                  <h2 className="text-3xl font-space font-bold text-white uppercase">{currentLevel.level} - {currentLevel.name}</h2>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden">
-                   {nextLevel && (
-                     <div 
-                       className="h-full bg-gradient-to-r from-indigo-600 to-purple-500 shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-out"
-                       style={{ width: `${Math.min(100, ((stats.xp - currentLevel.xpRequired) / (nextLevel.xpRequired - currentLevel.xpRequired)) * 100)}%` }}
-                     />
-                   )}
+              <div className="space-y-4">
+                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                  {nextLevel && (<div className="h-full bg-gradient-to-r from-indigo-600 to-purple-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]" style={{ width: `${Math.min(100, ((stats.xp - currentLevel.xpRequired) / (nextLevel.xpRequired - currentLevel.xpRequired)) * 100)}%` }} />)}
                 </div>
-                <div className="flex justify-between text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                   <span>{currentLevel.xpRequired} XP</span>
-                   {nextLevel ? <span>Faltam {nextLevel.xpRequired - stats.xp} XP para {nextLevel.name}</span> : <span>Nível Máximo</span>}
-                   <span>{nextLevel?.xpRequired} XP</span>
+                <div className="flex justify-between text-[8px] font-black text-slate-500 uppercase tracking-[0.3em]">
+                  <span>{stats.xp} XP</span>
+                  {nextLevel ? <span>Próximo nível em {nextLevel.xpRequired - stats.xp} XP</span> : <span>Nível Máximo</span>}
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
-                 <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest block">Missões Concluídas</span>
-                 <p className="text-4xl font-space font-bold text-white">{stats.completedCount || 0}</p>
-                 <p className="text-[10px] text-slate-500 uppercase font-medium">Arquivos sincronizados</p>
-              </div>
-              <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
-                 <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest block">Tempo de Foco Total</span>
-                 <p className="text-2xl font-space font-bold text-white truncate">
-                   {formatSeconds(stats.timeLogs?.reduce((acc, log) => acc + log.seconds, 0) || 0)}
-                 </p>
-              </div>
-              <div className="bg-white/[0.01] border border-white/5 p-8 rounded-[2rem] space-y-2">
-                 <span className="text-[8px] font-bold text-red-400 uppercase tracking-widest block">Protocolos Perdidos</span>
-                 <p className="text-4xl font-space font-bold text-white">{stats.gaveUpCount || 0}</p>
-              </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div className="hologram-card p-6 rounded-3xl text-center space-y-1">
+                  <span className="text-[7px] font-black text-indigo-400 uppercase tracking-[0.4em]">Sincronias</span>
+                  <p className="text-3xl font-space font-bold text-white">{stats.completedCount || 0}</p>
+               </div>
+               <div className="hologram-card p-6 rounded-3xl text-center space-y-1">
+                  <span className="text-[7px] font-black text-red-400 uppercase tracking-[0.4em]">Perdas</span>
+                  <p className="text-3xl font-space font-bold text-white">{stats.gaveUpCount || 0}</p>
+               </div>
             </div>
 
-            <div className="space-y-6 pb-20">
-               <h2 className="text-[9px] tracking-[0.6em] text-slate-700 font-bold uppercase border-l-2 border-indigo-500/20 pl-4">Logs Recentes</h2>
-               <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden divide-y divide-white/5">
-                  {stats.timeLogs?.slice(0, 15).map((log, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-6 hover:bg-white/[0.02]">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-space font-bold text-white uppercase">{log.taskTitle}</span>
-                        <span className="text-[8px] text-slate-600 font-bold uppercase">{new Date(log.timestamp).toLocaleString('pt-BR')}</span>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-indigo-400">+{formatSeconds(log.seconds)}</span>
+            <div className="space-y-4 pb-20">
+               <h3 className="text-[9px] tracking-[0.6em] text-indigo-500/50 font-black uppercase flex items-center gap-4">Logs Recentes</h3>
+               <div className="divide-y divide-white/5 bg-white/[0.01] rounded-2xl border border-white/5">
+                  {stats.timeLogs?.slice(0, 8).map((log, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-5">
+                      <div className="flex flex-col"><span className="text-xs font-bold text-slate-300 uppercase">{log.taskTitle}</span><span className="text-[7px] text-slate-600 font-bold uppercase">{new Date(log.timestamp).toLocaleString('pt-BR')}</span></div>
+                      <span className="text-xs font-space font-bold text-indigo-400">+{formatSeconds(log.seconds)}</span>
                     </div>
                   ))}
                </div>
@@ -725,27 +637,29 @@ const App: React.FC = () => {
         )}
 
         {mainView === 'EVOLUTION' && (
-          <div className="h-full flex flex-col items-center justify-center pb-20">
-            <div className="w-full max-w-5xl h-[300px] md:h-[500px]"><UniverseVisual level={stats.level} /></div>
-            <div className="mt-10 max-w-xl text-center space-y-3 px-4">
-               <h2 className="text-2xl font-space font-bold text-white uppercase tracking-widest">{currentLevel.name}</h2>
-               <p className="text-xs md:text-sm text-slate-400 italic font-light leading-relaxed">{isLoadingNarrative ? 'Conectando ao Oráculo...' : narrative}</p>
+          <div className="h-full flex flex-col items-center justify-center pb-24 space-y-8 pt-safe">
+            <div className="w-full max-w-5xl aspect-square md:aspect-auto md:h-[500px] relative">
+              <UniverseVisual level={stats.level} nebulaTheme={stats.nebulaTheme} />
+              
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/80 console-blur border border-white/10 p-3 rounded-2xl flex items-center gap-3 w-[80%] overflow-x-auto no-scrollbar">
+                 {NEBULA_PRESETS.map(preset => (
+                   <button key={preset.name} onClick={() => changeNebulaTheme(preset)} className={`w-8 h-8 rounded-full border-2 transition-all flex-shrink-0 ${stats.nebulaTheme?.name === preset.name ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40'}`} style={{ background: `linear-gradient(45deg, ${preset.secondary}, ${preset.primary})` }} />
+                 ))}
+              </div>
+            </div>
+            <div className="max-w-md text-center space-y-4 px-6">
+               <div className="space-y-1">
+                 <span className="text-[8px] font-black text-indigo-400 tracking-[0.5em] uppercase">Era Atual</span>
+                 <h2 className="text-2xl font-space font-bold text-white uppercase tracking-widest leading-tight">{currentLevel.storyEra}</h2>
+               </div>
+               <p className="text-[11px] md:text-sm text-slate-400 italic font-light leading-relaxed">{isLoadingNarrative ? 'Conectando ao núcleo de dados...' : narrative}</p>
             </div>
           </div>
         )}
       </main>
 
       {tasks.filter(t => activeTaskIds.includes(t.id)).map((task, index) => (
-        <TimerModal 
-          key={task.id}
-          task={task} 
-          stackIndex={index}
-          onUpdateTask={(updates) => updateTask(task.id, updates)}
-          onClose={() => setActiveTaskIds(prev => prev.filter(id => id !== task.id))} 
-          onComplete={(status, seconds) => handleTaskAction(status as any, seconds, task)} 
-          onToggleStep={(stepId) => toggleStep(task.id, stepId)}
-          onReward={(xp) => updateStats(xp, 'TIME_REWARD', 0, task)}
-        />
+        <TimerModal key={task.id} task={task} stackIndex={index} onUpdateTask={(updates) => updateTask(task.id, updates)} onClose={() => setActiveTaskIds(prev => prev.filter(id => id !== task.id))} onComplete={(status, seconds) => handleTaskAction(status as any, seconds, task)} onToggleStep={(stepId) => toggleStep(task.id, stepId)} onReward={(xp) => updateStats(xp, 'TIME_REWARD', 0, task)} />
       ))}
     </div>
   );

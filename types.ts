@@ -39,6 +39,12 @@ export interface TimeLog {
   taskTitle: string;
 }
 
+export interface NebulaTheme {
+  primary: string; // Hex ou RGBA
+  secondary: string; // Hex ou RGBA
+  name: string;
+}
+
 export interface UserStats {
   xp: number;
   level: number;
@@ -46,6 +52,7 @@ export interface UserStats {
   gaveUpCount: number;
   ignoredCount: number;
   timeLogs: TimeLog[];
+  nebulaTheme?: NebulaTheme;
 }
 
 export interface LevelInfo {
