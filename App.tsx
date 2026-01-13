@@ -123,7 +123,27 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if ((window as any).hideAppLoader) (window as any).hideAppLoader();
+    // Remove o loader após a aplicação estar completamente montada
+    const removeLoader = () => {
+      const loader = document.getElementById('app-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => {
+          if (loader.parentNode) {
+            loader.parentNode.removeChild(loader);
+          }
+        }, 500);
+      }
+    };
+    
+    // Tenta remover imediatamente e também após um pequeno delay
+    removeLoader();
+    setTimeout(removeLoader, 100);
+    
+    // Fallback: usa a função global se existir
+    if (typeof window !== 'undefined' && (window as any).hideAppLoader) {
+      (window as any).hideAppLoader();
+    }
   }, []);
 
   useEffect(() => {
